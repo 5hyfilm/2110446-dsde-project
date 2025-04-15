@@ -11,6 +11,9 @@ import plotly.graph_objects as go
 from wordcloud import WordCloud
 import nltk
 from nltk.corpus import stopwords
+import matplotlib.font_manager as fm
+from pythainlp.tokenize import word_tokenize
+from pythainlp.corpus import thai_stopwords
 nltk.download('stopwords')
 
 
@@ -282,75 +285,166 @@ with tab4:
     # Word cloud of comments
     st.subheader("Word Cloud of Issue Comments")
     
-    # Combine all comments
-    all_comments = ' '.join(df['comment'].dropna())
+    # ตรวจสอบว่ามีข้อความหรือไม่
+    if 'comment' in df.columns and not df['comment'].dropna().empty:
+        # รวมข้อความทั้งหมด
+        all_comments = ' '.join(df['comment'].dropna().astype(str))
+        
+        try:
+            # ระบุฟอนต์ไทย - ใช้ฟอนต์มาตรฐานถ้าหาฟอนต์ไทยไม่เจอ
+            try:
+                # ตรวจสอบฟอนต์ไทยที่มีในระบบ
+                thai_fonts = [f.name for f in fm.fontManager.ttflist 
+                            if any(name in f.name.lower() for name in ['thai', 'tahoma', 'sarabun', 'angsana'])]
+                
+                if thai_fonts:
+                    st.success(f"พบฟอนต์ที่น่าจะรองรับภาษาไทย: {', '.join(thai_fonts[:5])}")
+                    thai_font = fm.findfont(fm.FontProperties(family=thai_fonts[0]))
+                else:
+                    st.warning("ไม่พบฟอนต์ที่รองรับภาษาไทยในระบบ จะใช้ฟอนต์เริ่มต้น")
+                    thai_font = None
+            except Exception as e:
+                st.warning(f"ไม่สามารถตรวจสอบฟอนต์ได้: {e}")
+                thai_font = None
+            
+            # ใช้ pythainlp สำหรับตัดคำไทย
+            try:
+                tokens = word_tokenize(all_comments, engine='newmm')
+                
+                # กรองคำหยุด (stopwords) ภาษาไทย
+                try:
+                    thai_stops = list(thai_stopwords())
+                except:
+                    st.warning("ไม่สามารถโหลด thai_stopwords ได้ จะใช้ stopwords ที่กำหนดเอง")
+                    thai_stops = []
+                
+                # เพิ่มคำหยุดที่ต้องการเพิ่มเติม
+                custom_stops = [
+                    'ไม่', 'ให้', 'แล้ว', 'เป็น', 'มี', 'การ', 'ของ', 'ก็', 'ที่', 'ได้', 'ว่า', 'จะ',
+                    'ใน', 'แต่', 'และ', 'หรือ', 'มาก', 'กับ', 'จาก', 'ถ้า', 'อยู่', 'อย่าง', 'ซึ่ง',
+                    'ต้อง', 'ตาม', 'หาก', 'เพื่อ', 'โดย', 'เมื่อ', 'เพราะ', 'นี้', 'นั้น', 'จึง',
+                    'ยัง', 'แบบ', 'ทั้ง', 'เคย', 'กว่า', 'อีก', 'ต่อ', 'ๆ', '1', '2', '3', '4', '5',
+                    'ครับ', 'ค่ะ', 'น่า', 'มัน', 'กทม', 'กรุงเทพมหานคร'
+                ]
+                stopwords_list = set(thai_stops + custom_stops)
+                
+                # กรองคำหยุดออก
+                filtered_tokens = [token for token in tokens if token not in stopwords_list and len(token) > 1]
+                
+                # สร้างข้อความใหม่หลังกรอง
+                filtered_text = ' '.join(filtered_tokens)
+                
+                # แสดงทางเลือกให้ผู้ใช้
+                cloud_type = st.radio(
+                    "เลือกรูปแบบ Word Cloud:",
+                    ["แบบคลาสสิก", "แบบ Treemap (สี่เหลี่ยม)"]
+                )
+                
+                if cloud_type == "แบบคลาสสิก":
+                    # สร้าง Word Cloud แบบคลาสสิก
+                    wordcloud = WordCloud(
+                        font_path=thai_font,
+                        width=800, 
+                        height=400,
+                        background_color='white',
+                        stopwords=stopwords_list,
+                        max_words=100,
+                        contour_width=3,
+                        contour_color='steelblue',
+                        regexp=r"[^\s]+"  # ช่วยให้รองรับภาษาไทย
+                    ).generate(filtered_text)
+                    
+                    # แสดง Word Cloud
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    ax.imshow(wordcloud, interpolation='bilinear')
+                    ax.axis('off')
+                    st.pyplot(fig)
+                    
+                else:
+                    # สร้าง Word Cloud แบบ Treemap
+                    st.subheader("Word Treemap")
+                    
+                    # นับความถี่ของแต่ละคำ
+                    word_counts = Counter(filtered_tokens)
+                    
+                    try:
+                        # เตรียมข้อมูลสำหรับ treemap
+                        import squarify
+                        
+                        # เลือกคำที่พบบ่อยที่สุด 30 คำ
+                        top_words = dict(word_counts.most_common(30))
+                        
+                        # สร้าง Treemap
+                        fig, ax = plt.subplots(figsize=(12, 8))
+                        
+                        # กำหนดสี - เราใช้ชุดสีที่หลากหลาย
+                        colors = plt.cm.viridis(np.linspace(0, 1, len(top_words)))
+                        
+                        # สร้าง treemap
+                        squarify.plot(
+                            sizes=list(top_words.values()),
+                            label=list(top_words.keys()),
+                            alpha=0.8,
+                            color=colors,
+                            ax=ax
+                        )
+                        
+                        # ปรับแต่งกราฟ
+                        plt.axis('off')
+                        if thai_font:
+                            plt.title('คำที่พบบ่อยในข้อความแจ้งปัญหา', fontproperties=fm.FontProperties(fname=thai_font))
+                        else:
+                            plt.title('คำที่พบบ่อยในข้อความแจ้งปัญหา')
+                        
+                        # แสดง treemap
+                        st.pyplot(fig)
+                    except ImportError:
+                        st.error("ไม่พบไลบรารี่ squarify กรุณาติดตั้งด้วย: pip install squarify")
+                    except Exception as e:
+                        st.error(f"เกิดข้อผิดพลาดในการสร้าง Treemap: {e}")
+            except Exception as e:
+                st.error(f"เกิดข้อผิดพลาดในการตัดคำ: {e}")
+                st.info("ลองติดตั้ง pythainlp: pip install pythainlp")
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการสร้าง Word Cloud: {e}")
+            
+            # แนะนำการติดตั้งไลบรารี่ที่จำเป็น
+            st.info("คุณอาจต้องติดตั้งไลบรารี่เพิ่มเติม:")
+            st.code("pip install pythainlp squarify matplotlib")
+            
+            # แสดงข้อความที่จะถูกใช้ (สำหรับการแก้ไขปัญหา)
+            with st.expander("ดูข้อมูลเพื่อแก้ไขปัญหา"):
+                st.write("ตัวอย่างข้อความ 500 ตัวอักษรแรก:")
+                st.write(all_comments[:500])
     
-    # Thai stopwords
-    thai_stopwords = [
-        'ไม่', 'ให้', 'แล้ว', 'เป็น', 'มี', 'การ', 'ของ', 'ก็', 'ที่', 'ได้', 'ว่า', 'จะ',
-        'ใน', 'แต่', 'และ', 'หรือ', 'มาก', 'กับ', 'จาก', 'ถ้า', 'อยู่', 'อย่าง', 'ซึ่ง',
-        'ต้อง', 'ตาม', 'หาก', 'เพื่อ', 'โดย', 'เมื่อ', 'เพราะ', 'นี้', 'นั้น', 'จึง',
-        'ยัง', 'แบบ', 'ทั้ง', 'เคย', 'กว่า', 'อีก', 'ต่อ', 'ๆ', '1', '2', '3', '4', '5',
-        'ครับ', 'ค่ะ', 'น่า', 'มัน'
-    ]
+    else:
+        st.warning("ไม่พบข้อมูลข้อความในชุดข้อมูล")
     
-    # Create word cloud
-    wordcloud = WordCloud(
-        width=800, height=400,
-        background_color='white',
-        stopwords=set(thai_stopwords),
-        max_words=100,
-        contour_width=3,
-        contour_color='steelblue'
-    ).generate(all_comments)
+    # แสดงคำที่พบบ่อยในรูปแบบกราฟแท่ง
+    st.subheader("คำที่พบบ่อยที่สุดในข้อความแจ้งปัญหา")
     
-    # Display word cloud
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.imshow(wordcloud, interpolation='bilinear')
-    ax.axis('off')
-    st.pyplot(fig)
-    
-    # Most common words
-    st.subheader("Most Common Words in Issue Comments")
-    
-    # Tokenize and count words
-    words = re.findall(r'\w+', all_comments.lower())
-    word_counts = Counter(word for word in words if word not in thai_stopwords and len(word) > 1)
-    
-    # Convert to DataFrame
-    word_df = pd.DataFrame(word_counts.most_common(20), columns=['Word', 'Count'])
-    
-    fig = px.bar(word_df, x='Word', y='Count',
-                title='Most Common Words in Issue Comments',
-                color='Count', color_continuous_scale='Viridis')
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Analysis of sentiments in comments (simplified)
-    st.subheader("Comment Length Analysis")
-    
-    df['comment_length'] = df['comment'].apply(lambda x: len(str(x)) if pd.notna(x) else 0)
-    
-    fig = px.histogram(df, x='comment_length', nbins=30,
-                      title='Distribution of Comment Lengths',
-                      labels={'comment_length': 'Comment Length (characters)'},
-                      color_discrete_sequence=['darkgreen'])
-    fig.update_layout(bargap=0.1)
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Relationship between comment length and resolution time
-    st.subheader("Comment Length vs. Resolution Time")
-    
-    fig = px.scatter(df, x='comment_length', y='resolution_time_days',
-                    title='Comment Length vs. Resolution Time',
-                    labels={
-                        'comment_length': 'Comment Length (characters)',
-                        'resolution_time_days': 'Resolution Time (Days)'
-                    },
-                    color='district',
-                    size='comment_length',
-                    size_max=15,
-                    opacity=0.7)
-    st.plotly_chart(fig, use_container_width=True)
+    try:
+        if 'comment' in df.columns and not df['comment'].dropna().empty:
+            # Tokenize และนับคำ
+            all_tokens = []
+            for comment in df['comment'].dropna():
+                try:
+                    tokens = word_tokenize(str(comment), engine='newmm')
+                    all_tokens.extend([token for token in tokens if token not in stopwords_list and len(token) > 1])
+                except:
+                    continue
+            
+            word_counts = Counter(all_tokens)
+            
+            # แปลงเป็น DataFrame
+            word_df = pd.DataFrame(word_counts.most_common(20), columns=['คำ', 'จำนวนครั้ง'])
+            
+            fig = px.bar(word_df, x='คำ', y='จำนวนครั้ง',
+                        title='คำที่พบบ่อยที่สุดในข้อความแจ้งปัญหา',
+                        color='จำนวนครั้ง', color_continuous_scale='Viridis')
+            st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาดในการวิเคราะห์คำที่พบบ่อย: {e}")
 
 with tab_map:
     st.header("Geographic Distribution of Issues")
