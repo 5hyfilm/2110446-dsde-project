@@ -8,18 +8,47 @@ import re
 from collections import Counter
 import plotly.express as px
 import plotly.graph_objects as go
-from wordcloud import WordCloud
-import nltk
-from nltk.corpus import stopwords
-import matplotlib.font_manager as fm
-from pythainlp.tokenize import word_tokenize
-from pythainlp.corpus import thai_stopwords
-nltk.download('stopwords')
 import os
 import matplotlib.font_manager as fm
+import ssl
 
-thai_font_path = os.path.join("fonts", "THSarabunNew.ttf")
-font_prop = fm.FontProperties(fname=thai_font_path)
+# Fix for the SSL certificate issue with NLTK
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
+
+# Only import wordcloud and nltk if needed - with error handling
+try:
+    from wordcloud import WordCloud
+    import nltk
+    from nltk.corpus import stopwords
+    nltk.download('stopwords', quiet=True)
+    nltk_available = True
+except ImportError:
+    nltk_available = False
+    st.warning("WordCloud and/or NLTK not available. Text analysis features will be limited.")
+
+# Only import pythainlp if needed - with error handling
+try:
+    from pythainlp.tokenize import word_tokenize
+    from pythainlp.corpus import thai_stopwords
+    pythainlp_available = True
+except ImportError:
+    pythainlp_available = False
+    st.warning("PythaiNLP not available. Thai language processing will be limited.")
+
+# Thai font setup
+try:
+    thai_font_path = os.path.join("fonts", "THSarabunNew.ttf")
+    if os.path.exists(thai_font_path):
+        font_prop = fm.FontProperties(fname=thai_font_path)
+    else:
+        font_prop = None
+except Exception:
+    font_prop = None
 
 # Set page configuration
 st.set_page_config(
@@ -51,11 +80,20 @@ def load_data():
     df['resolution_time_days'] = df['resolution_time_hours'] / 24
     
     # Clean up type column - remove curly braces and split into list
-    df['type_list'] = df['type'].apply(lambda x: re.findall(r'{([^}]*)}', str(x)))
-    df['type_list'] = df['type_list'].apply(lambda x: [item.strip() for sublist in [i.split(',') for i in x] for item in sublist] if x else ['ไม่ระบุ'])
+    # Store as string representation instead of actual lists to avoid hashing issues
+    df['type_list_str'] = df['type'].apply(lambda x: re.findall(r'{([^}]*)}', str(x)))
+    df['type_list_str'] = df['type_list_str'].apply(
+        lambda x: str([item.strip() for sublist in [i.split(',') for i in x] for item in sublist] if x else ['ไม่ระบุ'])
+    )
     
-    # Extract organization as list
-    df['organization_list'] = df['organization'].apply(lambda x: str(x).split(',') if pd.notna(x) else ['ไม่ระบุ'])
+    # After caching, convert string representations back to actual lists
+    df['type_list'] = df['type_list_str'].apply(eval)
+    
+    # Same approach for organization list
+    df['organization_list_str'] = df['organization'].apply(
+        lambda x: str(str(x).split(',') if pd.notna(x) else ['ไม่ระบุ'])
+    )
+    df['organization_list'] = df['organization_list_str'].apply(eval)
     df['organization_list'] = df['organization_list'].apply(lambda x: [org.strip() for org in x])
     
     # Extract district information
@@ -66,24 +104,27 @@ def load_data():
 @st.cache_data
 def extract_coordinates(df):
     """Extract latitude and longitude from coords column"""
+    # Make a copy to avoid modifying the original
+    df_copy = df.copy()
+    
     # Initialize columns with NaN
-    df['latitude'] = np.nan
-    df['longitude'] = np.nan
+    df_copy['latitude'] = np.nan
+    df_copy['longitude'] = np.nan
     
     # Extract coordinates
-    for i, row in df.iterrows():
+    for i, row in df_copy.iterrows():
         if pd.notna(row['coords']):
             try:
                 # Try to extract coordinates from the format "100.53084,13.81865"
-                coords = row['coords'].split(',')
+                coords = str(row['coords']).split(',')
                 if len(coords) == 2:
                     # Note: In coords format, longitude comes first, then latitude
-                    df.at[i, 'longitude'] = float(coords[0])
-                    df.at[i, 'latitude'] = float(coords[1])
+                    df_copy.at[i, 'longitude'] = float(coords[0])
+                    df_copy.at[i, 'latitude'] = float(coords[1])
             except:
                 continue
     
-    return df
+    return df_copy
 
 # Load the data
 try:
@@ -94,7 +135,6 @@ except Exception as e:
     # Create empty dataframe for demonstration
     df = pd.DataFrame()
     st.stop()
-
 
 df = extract_coordinates(df)
 
@@ -150,7 +190,7 @@ with tab2:
     st.header("Analysis of Issue Types")
     
     # Extract all unique issue types
-    all_types = [item for sublist in df['type_list'].tolist() for item in sublist]
+    all_types = [item for sublist in df['type_list'] for item in sublist]
     type_counts = Counter(all_types)
     
     # Prepare data for visualization
@@ -169,7 +209,7 @@ with tab2:
     # Organizations responsible for issues
     st.subheader("Organizations Handling Issues")
     
-    all_orgs = [item for sublist in df['organization_list'].tolist() for item in sublist if item != 'ไม่ระบุ']
+    all_orgs = [item for sublist in df['organization_list'] for item in sublist if item != 'ไม่ระบุ']
     org_counts = Counter(all_orgs)
     
     org_df = pd.DataFrame.from_dict(org_counts, orient='index').reset_index()
@@ -286,66 +326,63 @@ with tab3:
 with tab4:
     st.header("Text Analysis of Issue Comments")
     
-    # Word cloud of comments
+    # Word cloud of comments - only if libraries are available
     st.subheader("Word Cloud of Issue Comments")
     
-    # ตรวจสอบว่ามีข้อความหรือไม่
-    if 'comment' in df.columns and not df['comment'].dropna().empty:
-        # รวมข้อความทั้งหมด
+    # Check if required libraries are available
+    if not nltk_available or not pythainlp_available:
+        st.warning("Cannot create word cloud: Required libraries (WordCloud, NLTK, or PythaiNLP) are not available.")
+        st.info("To enable full text analysis features, please install the required libraries:")
+        st.code("pip install wordcloud nltk pythainlp")
+    
+    # Check if comments are available
+    elif 'comment' in df.columns and not df['comment'].dropna().empty:
+        # Combine all comments
         all_comments = ' '.join(df['comment'].dropna().astype(str))
         
         try:
-            # ระบุฟอนต์ไทย - ใช้ฟอนต์มาตรฐานถ้าหาฟอนต์ไทยไม่เจอ
-            try:
-                # ตรวจสอบฟอนต์ไทยที่มีในระบบ
-                thai_fonts = [f.name for f in fm.fontManager.ttflist 
-                            if any(name in f.name.lower() for name in ['thai', 'tahoma', 'sarabun', 'angsana'])]
-                
-                if thai_fonts:
-                    st.success(f"พบฟอนต์ที่น่าจะรองรับภาษาไทย: {', '.join(thai_fonts[:5])}")
-                    thai_font = fm.findfont(fm.FontProperties(family=thai_fonts[0]))
-                else:
-                    st.warning("ไม่พบฟอนต์ที่รองรับภาษาไทยในระบบ จะใช้ฟอนต์เริ่มต้น")
-                    thai_font = None
-            except Exception as e:
-                st.warning(f"ไม่สามารถตรวจสอบฟอนต์ได้: {e}")
-                thai_font = None
+            # Use pythainlp for Thai word tokenization
+            tokens = word_tokenize(all_comments, engine='newmm')
             
-            # ใช้ pythainlp สำหรับตัดคำไทย
+            # Get Thai stopwords
             try:
-                tokens = word_tokenize(all_comments, engine='newmm')
-                
-                # กรองคำหยุด (stopwords) ภาษาไทย
+                thai_stops = list(thai_stopwords())
+            except:
+                thai_stops = []
+            
+            # Add custom stopwords
+            custom_stops = [
+                'ไม่', 'ให้', 'แล้ว', 'เป็น', 'มี', 'การ', 'ของ', 'ก็', 'ที่', 'ได้', 'ว่า', 'จะ',
+                'ใน', 'แต่', 'และ', 'หรือ', 'มาก', 'กับ', 'จาก', 'ถ้า', 'อยู่', 'อย่าง', 'ซึ่ง',
+                'ต้อง', 'ตาม', 'หาก', 'เพื่อ', 'โดย', 'เมื่อ', 'เพราะ', 'นี้', 'นั้น', 'จึง',
+                'ยัง', 'แบบ', 'ทั้ง', 'เคย', 'กว่า', 'อีก', 'ต่อ', 'ๆ', '1', '2', '3', '4', '5',
+                'ครับ', 'ค่ะ', 'น่า', 'มัน', 'กทม', 'กรุงเทพมหานคร'
+            ]
+            stopwords_list = set(thai_stops + custom_stops)
+            
+            # Filter out stopwords
+            filtered_tokens = [token for token in tokens if token not in stopwords_list and len(token) > 1]
+            
+            # Create new text after filtering
+            filtered_text = ' '.join(filtered_tokens)
+            
+            # Let user choose word cloud type
+            cloud_type = st.radio(
+                "Choose Word Cloud Type:",
+                ["Classic", "Treemap (Rectangle)"]
+            )
+            
+            if cloud_type == "Classic":
+                # Create classic word cloud
                 try:
-                    thai_stops = list(thai_stopwords())
-                except:
-                    st.warning("ไม่สามารถโหลด thai_stopwords ได้ จะใช้ stopwords ที่กำหนดเอง")
-                    thai_stops = []
-                
-                # เพิ่มคำหยุดที่ต้องการเพิ่มเติม
-                custom_stops = [
-                    'ไม่', 'ให้', 'แล้ว', 'เป็น', 'มี', 'การ', 'ของ', 'ก็', 'ที่', 'ได้', 'ว่า', 'จะ',
-                    'ใน', 'แต่', 'และ', 'หรือ', 'มาก', 'กับ', 'จาก', 'ถ้า', 'อยู่', 'อย่าง', 'ซึ่ง',
-                    'ต้อง', 'ตาม', 'หาก', 'เพื่อ', 'โดย', 'เมื่อ', 'เพราะ', 'นี้', 'นั้น', 'จึง',
-                    'ยัง', 'แบบ', 'ทั้ง', 'เคย', 'กว่า', 'อีก', 'ต่อ', 'ๆ', '1', '2', '3', '4', '5',
-                    'ครับ', 'ค่ะ', 'น่า', 'มัน', 'กทม', 'กรุงเทพมหานคร'
-                ]
-                stopwords_list = set(thai_stops + custom_stops)
-                
-                # กรองคำหยุดออก
-                filtered_tokens = [token for token in tokens if token not in stopwords_list and len(token) > 1]
-                
-                # สร้างข้อความใหม่หลังกรอง
-                filtered_text = ' '.join(filtered_tokens)
-                
-                # แสดงทางเลือกให้ผู้ใช้
-                cloud_type = st.radio(
-                    "เลือกรูปแบบ Word Cloud:",
-                    ["แบบคลาสสิก", "แบบ Treemap (สี่เหลี่ยม)"]
-                )
-                
-                if cloud_type == "แบบคลาสสิก":
-                    # สร้าง Word Cloud แบบคลาสสิก
+                    # Find Thai font
+                    thai_font = None
+                    for font in fm.fontManager.ttflist:
+                        if any(name in font.name.lower() for name in ['thai', 'tahoma', 'sarabun', 'angsana']):
+                            thai_font = fm.findfont(fm.FontProperties(family=font.name))
+                            break
+                    
+                    # Create word cloud
                     wordcloud = WordCloud(
                         font_path=thai_font,
                         width=800, 
@@ -355,83 +392,69 @@ with tab4:
                         max_words=100,
                         contour_width=3,
                         contour_color='steelblue',
-                        regexp=r"[^\s]+"  # ช่วยให้รองรับภาษาไทย
+                        regexp=r"[^\s]+"  # Help support Thai language
                     ).generate(filtered_text)
                     
-                    # แสดง Word Cloud
+                    # Display word cloud
                     fig, ax = plt.subplots(figsize=(10, 6))
                     ax.imshow(wordcloud, interpolation='bilinear')
                     ax.axis('off')
                     st.pyplot(fig)
+                except Exception as e:
+                    st.error(f"Error creating word cloud: {e}")
+                
+            else:
+                # Create treemap word cloud
+                st.subheader("Word Treemap")
+                
+                # Count frequency of each word
+                word_counts = Counter(filtered_tokens)
+                
+                try:
+                    # Import squarify for treemap visualization
+                    import squarify
                     
-                else:
-                    # สร้าง Word Cloud แบบ Treemap
-                    st.subheader("Word Treemap")
+                    # Select top 30 most frequent words
+                    top_words = dict(word_counts.most_common(30))
                     
-                    # นับความถี่ของแต่ละคำ
-                    word_counts = Counter(filtered_tokens)
+                    # Create treemap
+                    fig, ax = plt.subplots(figsize=(12, 8))
                     
-                    try:
-                        # เตรียมข้อมูลสำหรับ treemap
-                        import squarify
-                        
-                        # เลือกคำที่พบบ่อยที่สุด 30 คำ
-                        top_words = dict(word_counts.most_common(30))
-                        
-                        # สร้าง Treemap
-                        fig, ax = plt.subplots(figsize=(12, 8))
-                        
-                        # กำหนดสี - เราใช้ชุดสีที่หลากหลาย
-                        colors = plt.cm.viridis(np.linspace(0, 1, len(top_words)))
-                        
-                        # สร้าง treemap
-                        squarify.plot(
-                            sizes=list(top_words.values()),
-                            label=list(top_words.keys()),
-                            alpha=0.8,
-                            color=colors,
-                            ax=ax,
-                            text_kwargs={'fontproperties': font_prop}
-                        )
-
-                        
-                        # ปรับแต่งกราฟ
-                        plt.axis('off')
-                        if thai_font:
-                            plt.title('คำที่พบบ่อยในข้อความแจ้งปัญหา', fontproperties=fm.FontProperties(fname=thai_font))
-                        else:
-                            plt.title('คำที่พบบ่อยในข้อความแจ้งปัญหา')
-                        
-                        # แสดง treemap
-                        st.pyplot(fig)
-                    except ImportError:
-                        st.error("ไม่พบไลบรารี่ squarify กรุณาติดตั้งด้วย: pip install squarify")
-                    except Exception as e:
-                        st.error(f"เกิดข้อผิดพลาดในการสร้าง Treemap: {e}")
-            except Exception as e:
-                st.error(f"เกิดข้อผิดพลาดในการตัดคำ: {e}")
-                st.info("ลองติดตั้ง pythainlp: pip install pythainlp")
+                    # Set colors
+                    colors = plt.cm.viridis(np.linspace(0, 1, len(top_words)))
+                    
+                    # Create treemap
+                    squarify.plot(
+                        sizes=list(top_words.values()),
+                        label=list(top_words.keys()),
+                        alpha=0.8,
+                        color=colors,
+                        ax=ax,
+                        text_kwargs={'fontproperties': font_prop} if font_prop else {}
+                    )
+                    
+                    # Customize graph
+                    plt.axis('off')
+                    plt.title('Most Frequent Words in Issue Comments')
+                    
+                    # Show treemap
+                    st.pyplot(fig)
+                except ImportError:
+                    st.error("squarify library not found. Please install with: pip install squarify")
+                except Exception as e:
+                    st.error(f"Error creating treemap: {e}")
         except Exception as e:
-            st.error(f"เกิดข้อผิดพลาดในการสร้าง Word Cloud: {e}")
-            
-            # แนะนำการติดตั้งไลบรารี่ที่จำเป็น
-            st.info("คุณอาจต้องติดตั้งไลบรารี่เพิ่มเติม:")
-            st.code("pip install pythainlp squarify matplotlib")
-            
-            # แสดงข้อความที่จะถูกใช้ (สำหรับการแก้ไขปัญหา)
-            with st.expander("ดูข้อมูลเพื่อแก้ไขปัญหา"):
-                st.write("ตัวอย่างข้อความ 500 ตัวอักษรแรก:")
-                st.write(all_comments[:500])
+            st.error(f"Error in text processing: {e}")
     
     else:
-        st.warning("ไม่พบข้อมูลข้อความในชุดข้อมูล")
+        st.warning("No comment data found in the dataset")
     
-    # แสดงคำที่พบบ่อยในรูปแบบกราฟแท่ง
-    st.subheader("คำที่พบบ่อยที่สุดในข้อความแจ้งปัญหา")
+    # Show most common words as bar chart
+    st.subheader("Most Common Words in Issue Comments")
     
     try:
-        if 'comment' in df.columns and not df['comment'].dropna().empty:
-            # Tokenize และนับคำ
+        if pythainlp_available and 'comment' in df.columns and not df['comment'].dropna().empty:
+            # Tokenize and count words
             all_tokens = []
             for comment in df['comment'].dropna():
                 try:
@@ -442,15 +465,15 @@ with tab4:
             
             word_counts = Counter(all_tokens)
             
-            # แปลงเป็น DataFrame
-            word_df = pd.DataFrame(word_counts.most_common(20), columns=['คำ', 'จำนวนครั้ง'])
+            # Convert to DataFrame
+            word_df = pd.DataFrame(word_counts.most_common(20), columns=['Word', 'Count'])
             
-            fig = px.bar(word_df, x='คำ', y='จำนวนครั้ง',
-                        title='คำที่พบบ่อยที่สุดในข้อความแจ้งปัญหา',
-                        color='จำนวนครั้ง', color_continuous_scale='Viridis')
+            fig = px.bar(word_df, x='Word', y='Count',
+                        title='Most Frequent Words in Issue Comments',
+                        color='Count', color_continuous_scale='Viridis')
             st.plotly_chart(fig, use_container_width=True)
     except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการวิเคราะห์คำที่พบบ่อย: {e}")
+        st.error(f"Error analyzing frequent words: {e}")
 
 with tab_map:
     st.header("Geographic Distribution of Issues")
@@ -497,7 +520,7 @@ with tab_map:
             size_max=15,
             zoom=10,
             height=600,
-            mapbox_style="carto-positron"  # You can change this to other styles like "open-street-map"
+            mapbox_style="carto-positron"
         )
         
         # Improve hover information
