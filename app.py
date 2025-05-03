@@ -15,7 +15,11 @@ import matplotlib.font_manager as fm
 from pythainlp.tokenize import word_tokenize
 from pythainlp.corpus import thai_stopwords
 nltk.download('stopwords')
+import os
+import matplotlib.font_manager as fm
 
+thai_font_path = os.path.join("fonts", "THSarabunNew.ttf")
+font_prop = fm.FontProperties(fname=thai_font_path)
 
 # Set page configuration
 st.set_page_config(
@@ -386,8 +390,10 @@ with tab4:
                             label=list(top_words.keys()),
                             alpha=0.8,
                             color=colors,
-                            ax=ax
+                            ax=ax,
+                            text_kwargs={'fontproperties': font_prop}
                         )
+
                         
                         # ปรับแต่งกราฟ
                         plt.axis('off')
