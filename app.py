@@ -12,6 +12,10 @@ import os
 import matplotlib.font_manager as fm
 import ssl
 
+import matplotlib as mpl
+mpl.font_manager.fontManager.addfont('fonts/THSarabunNew.ttf') # Ensuring matplotlib recognizes the font
+mpl.rc('font', family='TH Sarabun New') # Setting the default font to TH Sarabun New
+
 # Fix for the SSL certificate issue with NLTK
 try:
     _create_unverified_https_context = ssl._create_unverified_context
