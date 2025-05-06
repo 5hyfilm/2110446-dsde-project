@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# Logs
+logs/
+*.log
+
+# Airflow logs and cache
+airflow.db
+unittest.cfg
+
+# SQLite DB
+*.db
+*.sqlite3
+
+# Python environment
+.env
+.venv
+env/
+venv/
+ENV/
+Pipfile.lock
+
+# Docker
+*.pid
+
+# VS Code
+.vscode/
+
+# System
+.DS_Store
+Thumbs.db
+
+# Ignore airflow DAG runs cache (if exists)
+**/__pycache__/
+
+# Ignore anything not needed in production
+*.bak
+*.swp

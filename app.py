@@ -11,6 +11,9 @@ import plotly.graph_objects as go
 import os
 import matplotlib.font_manager as fm
 import ssl
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import json
 
 import matplotlib as mpl
 mpl.font_manager.fontManager.addfont('fonts/THSarabunNew.ttf') # Ensuring matplotlib recognizes the font
@@ -68,79 +71,153 @@ This dashboard analyzes data from Traffy Fondue, a platform for citizens to repo
 Explore the patterns, response times, and common problems reported by citizens.
 """)
 
-# Function to load and preprocess data
-@st.cache_data
-def load_data():
-    # For demonstration, we'll use the provided data
-    # In a real application, you'd use st.file_uploader or load from a database
-    df = pd.read_csv('first_100_rows.csv')
-    
-    # Convert timestamp and last_activity to datetime
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df['last_activity'] = pd.to_datetime(df['last_activity'])
-    
-    # Calculate resolution time in hours
-    df['resolution_time_hours'] = (df['last_activity'] - df['timestamp']).dt.total_seconds() / 3600
-    df['resolution_time_days'] = df['resolution_time_hours'] / 24
-    
-    # Clean up type column - remove curly braces and split into list
-    # Store as string representation instead of actual lists to avoid hashing issues
-    df['type_list_str'] = df['type'].apply(lambda x: re.findall(r'{([^}]*)}', str(x)))
-    df['type_list_str'] = df['type_list_str'].apply(
-        lambda x: str([item.strip() for sublist in [i.split(',') for i in x] for item in sublist] if x else ['ไม่ระบุ'])
-    )
-    
-    # After caching, convert string representations back to actual lists
-    df['type_list'] = df['type_list_str'].apply(eval)
-    
-    # Same approach for organization list
-    df['organization_list_str'] = df['organization'].apply(
-        lambda x: str(str(x).split(',') if pd.notna(x) else ['ไม่ระบุ'])
-    )
-    df['organization_list'] = df['organization_list_str'].apply(eval)
-    df['organization_list'] = df['organization_list'].apply(lambda x: [org.strip() for org in x])
-    
-    # Extract district information
-    df['district'] = df['district'].fillna('ไม่ระบุ')
-    
-    return df
+# Database configuration - with environment variable support
+DB_HOST = os.getenv("DB_HOST", "localhost")  # Default to localhost instead of postgres
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME", "airflow")
+DB_USER = os.getenv("DB_USER", "airflow")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "airflow")
 
-@st.cache_data
-def extract_coordinates(df):
-    """Extract latitude and longitude from coords column"""
-    # Make a copy to avoid modifying the original
-    df_copy = df.copy()
-    
-    # Initialize columns with NaN
-    df_copy['latitude'] = np.nan
-    df_copy['longitude'] = np.nan
-    
-    # Extract coordinates
-    for i, row in df_copy.iterrows():
-        if pd.notna(row['coords']):
+# Function to connect to PostgreSQL
+def connect_to_db():
+    try:
+        st.info(f"Connecting to database at {DB_HOST}:{DB_PORT}...")
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD
+        )
+        st.success("Database connection established!")
+        return conn
+    except Exception as e:
+        st.error(f"Error connecting to database: {e}")
+        st.info("""
+        **Database Connection Troubleshooting:**
+        1. Make sure PostgreSQL is running
+        2. Check your connection settings
+        3. If running locally, try setting DB_HOST to 'localhost'
+        4. If running in Docker, make sure the network is properly configured
+        
+        You can set database connection parameters using environment variables:
+        - DB_HOST: Database hostname (default: localhost)
+        - DB_PORT: Database port (default: 5432)
+        - DB_NAME: Database name (default: airflow)
+        - DB_USER: Database username (default: airflow)
+        - DB_PASSWORD: Database password (default: airflow)
+        """)
+        return None
+
+# Function to load and preprocess data from PostgreSQL
+@st.cache_data(ttl=300)  # Cache data for 5 minutes
+def load_data():
+    conn = connect_to_db()
+    if conn is None:
+        # Add option for demo data when DB connection fails
+        use_demo = st.checkbox("Use demo data instead?", value=False)
+        if use_demo:
+            st.info("Using demo data. Note that this is not real-time data.")
+            # Try to load demo data from a local file if available
             try:
-                # Try to extract coordinates from the format "100.53084,13.81865"
-                coords = str(row['coords']).split(',')
-                if len(coords) == 2:
-                    # Note: In coords format, longitude comes first, then latitude
-                    df_copy.at[i, 'longitude'] = float(coords[0])
-                    df_copy.at[i, 'latitude'] = float(coords[1])
-            except:
-                continue
+                demo_file = "demo_data.csv"
+                if os.path.exists(demo_file):
+                    return pd.read_csv(demo_file)
+                else:
+                    st.error("Demo data file not found")
+            except Exception as e:
+                st.error(f"Error loading demo data: {e}")
+        return pd.DataFrame()
     
-    return df_copy
+    try:
+        # Use RealDictCursor to get column names
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Query to get all issues
+        query = """
+        SELECT 
+            id, 
+            message_id, 
+            type,
+            ST_X(coordinates::geometry) as longitude,
+            ST_Y(coordinates::geometry) as latitude,
+            problem_type_fondue,
+            org,
+            org_action,
+            description,
+            photo_url,
+            address,
+            subdistrict,
+            district,
+            province,
+            timestamp,
+            state,
+            last_activity
+        FROM issues;
+        """
+        
+        cursor.execute(query)
+        results = cursor.fetchall()
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(results)
+        
+        # Close connection
+        cursor.close()
+        conn.close()
+        
+        # If DataFrame is empty, return it
+        if df.empty:
+            st.warning("No data found in the database. The table might be empty.")
+            return df
+        
+        # Convert timestamp and last_activity to datetime
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df['last_activity'] = pd.to_datetime(df['last_activity'])
+        
+        # Calculate resolution time in hours
+        df['resolution_time_hours'] = (df['last_activity'] - df['timestamp']).dt.total_seconds() / 3600
+        df['resolution_time_days'] = df['resolution_time_hours'] / 24
+        
+        # Process array fields (problem_type_fondue, org, org_action)
+        # Convert PostgreSQL arrays to Python lists
+        if 'problem_type_fondue' in df.columns:
+            df['type_list'] = df['problem_type_fondue'].apply(lambda x: [] if x is None else (x if isinstance(x, list) else json.loads(x.replace('{', '[').replace('}', ']'))))
+            df['type_list_str'] = df['type_list'].apply(lambda x: str(x))
+        else:
+            df['type_list'] = [[] for _ in range(len(df))]
+            df['type_list_str'] = df['type_list'].apply(lambda x: str(x))
+        
+        if 'org' in df.columns:
+            df['organization_list'] = df['org'].apply(lambda x: [] if x is None else (x if isinstance(x, list) else json.loads(x.replace('{', '[').replace('}', ']'))))
+            df['organization_list_str'] = df['organization_list'].apply(lambda x: str(x))
+        else:
+            df['organization_list'] = [[] for _ in range(len(df))]
+            df['organization_list_str'] = df['organization_list'].apply(lambda x: str(x))
+        
+        # Fill missing district information
+        df['district'] = df['district'].fillna('ไม่ระบุ')
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"Error querying database: {e}")
+        if conn:
+            conn.close()
+        return pd.DataFrame()
 
 # Load the data
 try:
     df = load_data()
+    if df.empty:
+        st.error("No data found in the database. Please make sure the Airflow DAG to fetch data has been run.")
+        st.stop()
     st.success("Data loaded successfully!")
 except Exception as e:
     st.error(f"Error loading data: {e}")
     # Create empty dataframe for demonstration
     df = pd.DataFrame()
     st.stop()
-
-df = extract_coordinates(df)
 
 # Display raw data with toggle
 with st.expander("Show raw data"):
@@ -340,9 +417,9 @@ with tab4:
         st.code("pip install wordcloud nltk pythainlp")
     
     # Check if comments are available
-    elif 'comment' in df.columns and not df['comment'].dropna().empty:
+    elif 'description' in df.columns and not df['description'].dropna().empty:
         # Combine all comments
-        all_comments = ' '.join(df['comment'].dropna().astype(str))
+        all_comments = ' '.join(df['description'].dropna().astype(str))
         
         try:
             # Use pythainlp for Thai word tokenization
@@ -457,10 +534,10 @@ with tab4:
     st.subheader("Most Common Words in Issue Comments")
     
     try:
-        if pythainlp_available and 'comment' in df.columns and not df['comment'].dropna().empty:
+        if pythainlp_available and 'description' in df.columns and not df['description'].dropna().empty:
             # Tokenize and count words
             all_tokens = []
-            for comment in df['comment'].dropna():
+            for comment in df['description'].dropna():
                 try:
                     tokens = word_tokenize(str(comment), engine='newmm')
                     all_tokens.extend([token for token in tokens if token not in stopwords_list and len(token) > 1])
@@ -488,7 +565,7 @@ with tab_map:
     if not map_df.empty:
         # Create a column for hover information
         map_df['hover_text'] = map_df.apply(
-            lambda row: f"ID: {row['ticket_id']}<br>" +
+            lambda row: f"ID: {row['message_id']}<br>" +
                        f"Type: {', '.join(row['type_list'])}<br>" +
                        f"District: {row['district']}<br>" +
                        f"Status: {row['state']}<br>" +
@@ -518,7 +595,7 @@ with tab_map:
             lat="latitude", 
             lon="longitude",
             color="state",
-            hover_name="ticket_id",
+            hover_name="message_id",
             hover_data=["district", "timestamp"],
             custom_data=["hover_text"],
             size_max=15,
