@@ -245,13 +245,15 @@ with tab1:
     with col2:
         # Issues over time
         df_time = df.copy()
-        df_time['month_year'] = df_time['timestamp'].dt.strftime('%Y-%m')
-        monthly_counts = df_time.groupby('month_year').size().reset_index(name='count')
-        
-        fig = px.line(monthly_counts, x='month_year', y='count', 
-                    title='Number of Reported Issues Over Time',
-                    labels={'count': 'Number of Issues', 'month_year': 'Month-Year'})
+        df_time['date'] = df_time['timestamp'].dt.date  # แสดงเฉพาะวันที่ ไม่รวมเวลา
+        daily_counts = df_time.groupby('date').size().reset_index(name='count')
+
+        fig = px.line(daily_counts, x='date', y='count', 
+                    title='Number of Reported Issues by Day',
+                    labels={'count': 'Number of Issues', 'date': 'Date'})
         fig.update_layout(xaxis_tickangle=-45)
+        # บังคับให้แกน Y เริ่มจาก 0
+        fig.update_yaxes(rangemode="tozero")
         st.plotly_chart(fig, use_container_width=True)
     
     # Geographic distribution
