@@ -115,14 +115,59 @@ def load_data():
     conn = connect_to_db()
     if conn is None:
         # Add option for demo data when DB connection fails
-        use_demo = st.checkbox("Use demo data instead?", value=False)
+        use_demo = st.checkbox("Use demo data instead?", value=True)
         if use_demo:
             st.info("Using demo data. Note that this is not real-time data.")
             # Try to load demo data from a local file if available
             try:
-                demo_file = "demo_data.csv"
+                demo_file = "data_and_rain.csv"
                 if os.path.exists(demo_file):
-                    return pd.read_csv(demo_file)
+                    # Load demo data
+                    df = pd.read_csv(demo_file, nrows=1000)
+                    
+                    # Convert timestamp and last_activity to datetime
+                    if 'timestamp' in df.columns:
+                        df['timestamp'] = pd.to_datetime(df['timestamp'])
+                    if 'last_activity' in df.columns:
+                        df['last_activity'] = pd.to_datetime(df['last_activity'])
+                    
+                    # Calculate resolution time in hours (if needed)
+                    if 'timestamp' in df.columns and 'last_activity' in df.columns:
+                        df['resolution_time_hours'] = (df['last_activity'] - df['timestamp']).dt.total_seconds() / 3600
+                        df['resolution_time_days'] = df['resolution_time_hours'] / 24
+                    
+                    # Process array fields if they exist in the demo data
+                    # In CSV, these might be stored as strings that look like lists
+                    if 'type' in df.columns:
+                        try:
+                            df['type_list'] = df['type'].apply(lambda x: str(x).split(',') if pd.notna(x) else [])
+                            df['type_list_str'] = df['type_list'].apply(lambda x: str(x))
+                        except:
+                            df['type_list'] = [[] for _ in range(len(df))]
+                            df['type_list_str'] = df['type_list'].apply(lambda x: str(x))
+                    
+                    if 'organization' in df.columns:
+                        try:
+                            df['organization_list'] = df['organization'].apply(lambda x: str(x).split(',') if pd.notna(x) else [])
+                            df['organization_list_str'] = df['organization_list'].apply(lambda x: str(x))
+                        except:
+                            df['organization_list'] = [[] for _ in range(len(df))]
+                            df['organization_list_str'] = df['organization_list'].apply(lambda x: str(x))
+                    
+                    # Extract coordinates if stored in a single field
+                    if 'coords' in df.columns:
+                        try:
+                            # Try to extract coordinates if they're in "lat,long" format
+                            df[['latitude', 'longitude']] = df['coords'].str.split(',', expand=True).astype(float)
+                        except:
+                            st.warning("Could not parse coordinates from the coords column.")
+                    
+                    # Fill missing district information
+                    if 'district' in df.columns:
+                        df['district'] = df['district'].fillna('ไม่ระบุ')
+                    
+                    st.success(f"Successfully loaded demo data with {len(df)} records")
+                    return df
                 else:
                     st.error("Demo data file not found")
             except Exception as e:
@@ -206,9 +251,27 @@ def load_data():
             conn.close()
         return pd.DataFrame()
 
+# Function to load rainfall data
+@st.cache_data(ttl=300)
+def load_rainfall_data():
+    try:
+        # Try to load rainfall data
+        rainfall_file = "data_and_rain.csv"
+        if os.path.exists(rainfall_file):
+            rain_df = pd.read_csv(rainfall_file, nrows=1000)
+            return rain_df
+        else:
+            st.warning("Rainfall data file not found.")
+            return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error loading rainfall data: {e}")
+        return pd.DataFrame()
+
 # Load the data
 try:
     df = load_data()
+    rain_df = load_rainfall_data()
+    
     if df.empty:
         st.error("No data found in the database. Please make sure the Airflow DAG to fetch data has been run.")
         st.stop()
@@ -224,7 +287,7 @@ with st.expander("Show raw data"):
     st.dataframe(df)
 
 # Create tabs for different analyses
-tab1, tab_map, tab2, tab3, tab4 = st.tabs(["Overview", "Map Visualization", "Issue Analysis", "Response Time", "Text Analysis"])
+tab1, tab_map, tab2, tab3, tab4, tab_rain = st.tabs(["Overview", "Map Visualization", "Issue Analysis", "Response Time", "Text Analysis", "Rainfall Analysis"])
 
 with tab1:
     st.header("Overview of Reported Issues")
@@ -661,10 +724,171 @@ with tab_map:
     else:
         st.error("No geographic coordinates found in the data. Cannot display map.")
 
+# New tab for rainfall analysis
+with tab_rain:
+    st.header("Rainfall Data Analysis")
+    
+    if rain_df.empty:
+        st.error("No rainfall data available.")
+    else:
+        st.success(f"Loaded rainfall data with {len(rain_df)} records")
+        
+        with st.expander("Show rainfall data"):
+            st.dataframe(rain_df)
+        
+        st.subheader("Rainfall Statistics")
+        
+        # Display basic rainfall statistics
+        rainfall_stats = pd.DataFrame({
+            'Statistic': ['Min', 'Max', 'Mean', 'Median'],
+            'MinRain': [rain_df['MinRain'].min(), rain_df['MinRain'].max(), 
+                        rain_df['MinRain'].mean(), rain_df['MinRain'].median()],
+            'MaxRain': [rain_df['MaxRain'].min(), rain_df['MaxRain'].max(), 
+                        rain_df['MaxRain'].mean(), rain_df['MaxRain'].median()],
+            'AvgRain': [rain_df['AvgRain'].min(), rain_df['AvgRain'].max(), 
+                        rain_df['AvgRain'].mean(), rain_df['AvgRain'].median()]
+        })
+        
+        st.table(rainfall_stats)
+        
+        # Visualization of rainfall data
+        st.subheader("Rainfall Distribution by Month")
+        
+        if 'MONTH' in rain_df.columns:
+            # Create a month-based rainfall visualization
+            monthly_rain = rain_df.groupby('MONTH')['AvgRain'].mean().reset_index()
+            
+            fig = px.line(monthly_rain, x='MONTH', y='AvgRain',
+                         title='Average Rainfall by Month',
+                         labels={'AvgRain': 'Average Rainfall', 'MONTH': 'Month'},
+                         markers=True)
+            fig.update_layout(xaxis=dict(tickmode='linear'))
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Compare rainfall with issue frequency
+        st.subheader("Relationship Between Rainfall and Issue Reporting")
+        
+        # Check if we can merge data based on district/province
+        if 'district' in df.columns and 'PROV_T' in rain_df.columns:
+            try:
+                # Convert columns to same case for easier matching
+                df_copy = df.copy()
+                rain_copy = rain_df.copy()
+                
+                df_copy['district_lower'] = df_copy['district'].str.lower()
+                rain_copy['PROV_T_lower'] = rain_copy['PROV_T'].str.lower()
+                
+                # Count issues by district
+                district_issues = df_copy.groupby('district_lower').size().reset_index(name='issue_count')
+                
+                # Merge with rainfall data
+                merged_data = pd.merge(
+                    district_issues, 
+                    rain_copy,
+                    left_on='district_lower',
+                    right_on='PROV_T_lower',
+                    how='inner'
+                )
+                
+                if not merged_data.empty:
+                    # Create a scatter plot
+                    fig = px.scatter(
+                        merged_data, 
+                        x='AvgRain', 
+                        y='issue_count',
+                        size='issue_count',
+                        color='AvgRain',
+                        hover_name='PROV_T',
+                        labels={
+                            'AvgRain': 'Average Rainfall',
+                            'issue_count': 'Number of Issues Reported'
+                        },
+                        title='Relationship Between Average Rainfall and Number of Issues Reported'
+                    )
+                    
+                    # Add trendline
+                    fig.update_traces(marker=dict(line=dict(width=1, color='DarkSlateGray')))
+                    fig.update_layout(coloraxis_colorbar=dict(title='Avg Rainfall'))
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Calculate correlation
+                    correlation = merged_data['AvgRain'].corr(merged_data['issue_count'])
+                    st.metric("Correlation between Rainfall and Issues", f"{correlation:.3f}")
+                    
+                    if correlation > 0.3:
+                        st.info("There appears to be a positive correlation between rainfall and issue reporting.")
+                    elif correlation < -0.3:
+                        st.info("There appears to be a negative correlation between rainfall and issue reporting.")
+                    else:
+                        st.info("There does not appear to be a strong correlation between rainfall and issue reporting.")
+                else:
+                    st.warning("Could not match districts between datasets. Check that names are consistent.")
+            except Exception as e:
+                st.error(f"Error analyzing rainfall correlation: {e}")
+                
+        # Rainfall by province/district
+        if 'PROV_T' in rain_df.columns:
+            st.subheader("Average Rainfall by Province")
+            
+            # Group by province
+            province_rain = rain_df.groupby('PROV_T')['AvgRain'].mean().reset_index()
+            province_rain = province_rain.sort_values('AvgRain', ascending=False)
+            
+            fig = px.bar(
+                province_rain,
+                x='PROV_T',
+                y='AvgRain',
+                title='Average Rainfall by Province',
+                color='AvgRain',
+                color_continuous_scale='Blues'
+            )
+            
+            fig.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Analyze peak rainfall months
+        if 'MONTH' in rain_df.columns and 'AvgRain' in rain_df.columns:
+            st.subheader("Peak Rainfall Months")
+            
+            # Get average rainfall by month
+            monthly_avg = rain_df.groupby('MONTH')['AvgRain'].mean().reset_index()
+            monthly_avg = monthly_avg.sort_values('AvgRain', ascending=False)
+            
+            # Map month numbers to names
+            month_names = {
+                1: 'January', 2: 'February', 3: 'March', 4: 'April',
+                5: 'May', 6: 'June', 7: 'July', 8: 'August',
+                9: 'September', 10: 'October', 11: 'November', 12: 'December'
+            }
+            
+            monthly_avg['Month Name'] = monthly_avg['MONTH'].map(month_names)
+            
+            # Show peak rainfall months
+            st.markdown("#### Months with Highest Average Rainfall")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Display top 3 months with highest rainfall
+                st.table(monthly_avg.head(3)[['Month Name', 'AvgRain']])
+            
+            with col2:
+                # Create a simple visualization for peak months
+                fig = px.bar(
+                    monthly_avg.head(3),
+                    x='Month Name',
+                    y='AvgRain',
+                    color='AvgRain',
+                    color_continuous_scale='Blues',
+                    title='Top 3 Months with Highest Rainfall'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
 # Footer
 st.markdown("""
 ---
 ### About This Dashboard
 This dashboard was created using Streamlit, Plotly, and other data analysis libraries to visualize and analyze data from Traffy Fondue.
-The analysis focuses on understanding the types of issues reported, response times, and textual patterns in user comments.
+The analysis focuses on understanding the types of issues reported, response times, textual patterns in user comments, and the relationship with rainfall data.
 """)
