@@ -46,7 +46,9 @@ def initialize_data():
         province VARCHAR(255),
         timestamp TIMESTAMP,
         state VARCHAR(50),
-        last_activity TIMESTAMP
+        last_activity TIMESTAMP,
+        response_time INTEGER,
+        predicted_response_time INTEGER
     );
     """
     
