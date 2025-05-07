@@ -754,16 +754,16 @@ with tab_rain:
         # Visualization of rainfall data
         st.subheader("Rainfall Distribution by Month")
         
-        if 'MONTH' in rain_df.columns:
-            # Create a month-based rainfall visualization
-            monthly_rain = rain_df.groupby('MONTH')['AvgRain'].mean().reset_index()
+        # if 'MONTH' in rain_df.columns:
+        #     # Create a month-based rainfall visualization
+        #     monthly_rain = rain_df.groupby('MONTH')['AvgRain'].mean().reset_index()
             
-            fig = px.line(monthly_rain, x='MONTH', y='AvgRain',
-                         title='Average Rainfall by Month',
-                         labels={'AvgRain': 'Average Rainfall', 'MONTH': 'Month'},
-                         markers=True)
-            fig.update_layout(xaxis=dict(tickmode='linear'))
-            st.plotly_chart(fig, use_container_width=True)
+        #     fig = px.line(monthly_rain, x='MONTH', y='AvgRain',
+        #                  title='Average Rainfall by Month',
+        #                  labels={'AvgRain': 'Average Rainfall', 'MONTH': 'Month'},
+        #                  markers=True)
+        #     fig.update_layout(xaxis=dict(tickmode='linear'))
+        #     st.plotly_chart(fig, use_container_width=True)
         
         # Compare rainfall with issue frequency
         st.subheader("Relationship Between Rainfall and Issue Reporting")
@@ -871,7 +871,9 @@ with tab_rain:
             
             with col1:
                 # Display top 3 months with highest rainfall
-                st.table(monthly_avg.head(12)[['Month Name', 'AvgRain']])
+                st.write(f"จำนวนเดือนทั้งหมดในข้อมูล: {len(monthly_avg)}")
+                monthly_by_month = monthly_avg.sort_values('MONTH')
+                st.table(monthly_by_month[['Month Name', 'AvgRain']])
             
             with col2:
                 # Create a simple visualization for peak months
