@@ -953,7 +953,7 @@ if 'latitude' in df.columns and 'longitude' in df.columns:
             # เปลี่ยนจาก scatter_mapbox เป็น density_mapbox
             # ปรับค่า radius ให้มากขึ้นหรือน้อยลงตามต้องการ
             fig = px.density_mapbox(
-                rain_df,  # หรือชื่อ DataFrame ที่มีข้อมูลพิกัด
+                rain_with_coords,  # หรือชื่อ DataFrame ที่มีข้อมูลพิกัด
                 lat="latitude", 
                 lon="longitude", 
                 z="AvgRain",
