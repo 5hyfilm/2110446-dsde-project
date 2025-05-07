@@ -871,88 +871,132 @@ with tab_rain:
             
             with col1:
                 # Display top 3 months with highest rainfall
-                st.table(monthly_avg.head(3)[['Month Name', 'AvgRain']])
+                st.table(monthly_avg.head(12)[['Month Name', 'AvgRain']])
             
             with col2:
                 # Create a simple visualization for peak months
                 fig = px.bar(
-                    monthly_avg.head(3),
+                    monthly_avg.head(12),
                     x='Month Name',
                     y='AvgRain',
                     color='AvgRain',
                     color_continuous_scale='Blues',
-                    title='Top 3 Months with Highest Rainfall'
+                    title='Months with Highest Rainfall'
                 )
                 st.plotly_chart(fig, use_container_width=True)
 # เพิ่มในส่วน tab_rain
 
-# ปรับปรุงโค้ดส่วนแผนที่ปริมาณฝนใน tab_rain
-st.subheader("แผนที่ปริมาณฝน (ใช้พิกัดจากคอลัมน์ coords โดยตรง)")
+        # ปรับปรุงโค้ดส่วนแผนที่ปริมาณฝนใน tab_rain
+        st.subheader("แผนที่ปริมาณฝน (ใช้พิกัดจากคอลัมน์ coords โดยตรง)")
 
-# ตรวจสอบว่ามีคอลัมน์ coords หรือไม่
-if 'coords' in rain_df.columns:
-    # แยกพิกัดจากคอลัมน์ coords
-    rain_df_with_coords = rain_df.copy()
-    
-    try:
-        # แยกค่า longitude และ latitude จากคอลัมน์ coords
-        # รูปแบบตัวอย่าง: "100.53084,13.81865"
-        rain_df_with_coords[['longitude', 'latitude']] = rain_df_with_coords['coords'].str.split(',', expand=True).astype(float)
-        
-        # แสดงข้อมูลพิกัดที่สกัดได้
-        st.write("ข้อมูลฝนที่มีพิกัด:", len(rain_df_with_coords), "แถว")
-        st.dataframe(rain_df_with_coords[['coords', 'longitude', 'latitude', 'AvgRain']].head())
-        
-        # สร้าง heatmap จากข้อมูลพิกัดโดยตรง
-        fig = px.density_mapbox(
-            rain_df_with_coords,
-            lat="latitude", 
-            lon="longitude", 
-            z="AvgRain",
-            radius=15,  # ปรับรัศมีตามความเหมาะสม
-            center=dict(lat=13.75, lon=100.5),  # พิกัดกลางของกรุงเทพฯ
-            zoom=9,
-            mapbox_style="carto-positron",
-            height=600,
-            opacity=0.7,
-            color_continuous_scale="Viridis",
-            title="แผนที่ความเข้มของฝนตกโดยใช้พิกัดจริง"
-        )
-        
-        # ปรับแต่ง layout
-        fig.update_layout(
-            margin={"r":0, "t":30, "l":0, "b":0},
-            coloraxis_colorbar=dict(
-                title="ปริมาณฝนเฉลี่ย"
-            )
-        )
-        
-        # แสดงแผนที่
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # เพิ่มการวิเคราะห์เพิ่มเติม - แสดงจุดที่มีปริมาณฝนมากที่สุด/น้อยที่สุด
-        st.subheader("พื้นที่ที่มีปริมาณฝนมากที่สุด/น้อยที่สุด")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # แสดงพื้นที่ที่มีฝนมากที่สุด 5 อันดับแรก
-            top_rain = rain_df_with_coords.sort_values('AvgRain', ascending=False).head(5)
-            st.write("พื้นที่ที่มีฝนมากที่สุด 5 อันดับแรก:")
-            st.dataframe(top_rain[['PROV_T', 'district', 'AvgRain']])
-        
-        with col2:
-            # แสดงพื้นที่ที่มีฝนน้อยที่สุด 5 อันดับแรก
-            bottom_rain = rain_df_with_coords.sort_values('AvgRain').head(5)
-            st.write("พื้นที่ที่มีฝนน้อยที่สุด 5 อันดับแรก:")
-            st.dataframe(bottom_rain[['PROV_T', 'district', 'AvgRain']])
-        
-    except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการแยกพิกัด: {e}")
-        st.write("ตัวอย่างค่าในคอลัมน์ coords:")
-        st.write(rain_df['coords'].head())
-else:
-    st.error("ไม่พบคอลัมน์ 'coords' ในข้อมูลฝน")
+        # ตรวจสอบว่ามีคอลัมน์ coords หรือไม่
+        if 'coords' in rain_df.columns:
+            # แยกพิกัดจากคอลัมน์ coords
+            rain_df_with_coords = rain_df.copy()
+            
+            try:
+                # แยกค่า longitude และ latitude จากคอลัมน์ coords
+                # รูปแบบตัวอย่าง: "100.53084,13.81865"
+                rain_df_with_coords[['longitude', 'latitude']] = rain_df_with_coords['coords'].str.split(',', expand=True).astype(float)
+                
+                # แสดงข้อมูลพิกัดที่สกัดได้
+                # st.write("ข้อมูลฝนที่มีพิกัด:", len(rain_df_with_coords), "แถว")
+                # st.dataframe(rain_df_with_coords[['coords', 'longitude', 'latitude', 'AvgRain']].head())
+                
+                # สร้าง heatmap จากข้อมูลพิกัดโดยตรง
+                fig = px.density_mapbox(
+                    rain_df_with_coords,
+                    lat="latitude", 
+                    lon="longitude", 
+                    z="AvgRain",
+                    radius=15,  # ปรับรัศมีตามความเหมาะสม
+                    center=dict(lat=13.75, lon=100.5),  # พิกัดกลางของกรุงเทพฯ
+                    zoom=9,
+                    mapbox_style="carto-positron",
+                    height=600,
+                    opacity=0.7,
+                    color_continuous_scale="RdBu_r",
+                    title="แผนที่ความเข้มของฝนตกโดยใช้พิกัดจริง"
+                )
+                
+                # ปรับแต่ง layout
+                fig.update_layout(
+                    margin={"r":0, "t":30, "l":0, "b":0},
+                    coloraxis_colorbar=dict(
+                        title="ปริมาณฝนเฉลี่ย"
+                    )
+                )
+                
+                # แสดงแผนที่
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # เพิ่มการวิเคราะห์ตามเขต - คำนวณค่าเฉลี่ยของแต่ละเขต
+                st.subheader("พื้นที่ที่มีปริมาณฝนมากที่สุด/น้อยที่สุด (เฉลี่ยตามเขต)")
+                
+                # ตรวจสอบว่ามีคอลัมน์เขตหรือไม่
+                district_column = None
+                if 'district' in rain_df_with_coords.columns:
+                    district_column = 'district'
+                elif 'เขต' in rain_df_with_coords.columns:
+                    district_column = 'เขต'
+                
+                if district_column:
+                    # คำนวณค่าเฉลี่ยของแต่ละเขต
+                    district_avg_rain = rain_df_with_coords.groupby(district_column)['AvgRain'].mean().reset_index()
+                    district_avg_rain.columns = ['เขต', 'ปริมาณฝนเฉลี่ย']
+                    
+                    # คำนวณจำนวนข้อมูลในแต่ละเขต
+                    district_count = rain_df_with_coords.groupby(district_column).size().reset_index()
+                    district_count.columns = ['เขต', 'จำนวนข้อมูล']
+                    
+                    # รวมข้อมูลเข้าด้วยกัน
+                    district_stats = pd.merge(district_avg_rain, district_count, on='เขต')
+                    
+                    # เรียงลำดับตามปริมาณฝนเฉลี่ย
+                    district_stats_desc = district_stats.sort_values('ปริมาณฝนเฉลี่ย', ascending=False)
+                    district_stats_asc = district_stats.sort_values('ปริมาณฝนเฉลี่ย')
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # แสดงเขตที่มีฝนมากที่สุด 10 อันดับแรก
+                        st.write("เขตที่มีฝนมากที่สุด 10 อันดับแรก:")
+                        st.dataframe(district_stats_desc.head(10))
+                    
+                    with col2:
+                        # แสดงเขตที่มีฝนน้อยที่สุด 10 อันดับแรก
+                        st.write("เขตที่มีฝนน้อยที่สุด 10 อันดับแรก:")
+                        st.dataframe(district_stats_asc.head(10))
+                    
+                    # สร้างกราฟแท่งแสดงปริมาณฝนเฉลี่ยของแต่ละเขต (Top 15)
+                    st.subheader("ปริมาณฝนเฉลี่ยของแต่ละเขต (15 อันดับแรก)")
+                    
+                    fig_bar = px.bar(
+                        district_stats_desc.head(15),
+                        x='เขต',
+                        y='ปริมาณฝนเฉลี่ย',
+                        color='ปริมาณฝนเฉลี่ย',
+                        text='จำนวนข้อมูล',  # แสดงจำนวนข้อมูลบนแต่ละแท่ง
+                        color_continuous_scale="Blues",
+                        height=500,
+                        title="เขตที่มีปริมาณฝนเฉลี่ยสูงที่สุด 15 อันดับแรก"
+                    )
+                    
+                    fig_bar.update_layout(xaxis_tickangle=-45)
+                    fig_bar.update_traces(texttemplate='%{text} ข้อมูล', textposition='outside')
+                    
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                    
+                else:
+                    st.warning("ไม่พบคอลัมน์เขต (district) ในข้อมูล จึงไม่สามารถคำนวณค่าเฉลี่ยตามเขตได้")
+                    
+            except Exception as e:
+                st.error(f"เกิดข้อผิดพลาดในการแยกพิกัด: {e}")
+                st.write("ตัวอย่างค่าในคอลัมน์ coords:")
+                st.write(rain_df['coords'].head())
+        else:
+            st.error("ไม่พบคอลัมน์ 'coords' ในข้อมูลฝน")
+
 # Footer
 st.markdown("""
 ---
