@@ -886,101 +886,73 @@ with tab_rain:
                 st.plotly_chart(fig, use_container_width=True)
 # เพิ่มในส่วน tab_rain
 
-st.subheader("ทดสอบแผนที่ปริมาณฝน (ใช้วิธีเดียวกับ Issues)")
+# ปรับปรุงโค้ดส่วนแผนที่ปริมาณฝนใน tab_rain
+st.subheader("แผนที่ปริมาณฝน (ใช้พิกัดจากคอลัมน์ coords โดยตรง)")
 
-# ตรวจสอบและแสดงคอลัมน์ที่มีทั้งหมดในข้อมูลฝน
-st.write("คอลัมน์ทั้งหมดในข้อมูลฝน:")
-st.write(rain_df.columns.tolist())
-
-# ตรวจสอบคอลัมน์ที่มีคำว่า lat หรือ long ในชื่อ
-lat_cols = [col for col in rain_df.columns if 'lat' in col.lower()]
-long_cols = [col for col in rain_df.columns if 'lon' in col.lower() or 'lng' in col.lower()]
-
-st.write("คอลัมน์ที่อาจเกี่ยวกับละติจูด:", lat_cols)
-st.write("คอลัมน์ที่อาจเกี่ยวกับลองจิจูด:", long_cols)
-
-# ตรวจสอบคอลัมน์ coords หรือ coordinates
-coord_cols = [col for col in rain_df.columns if 'coord' in col.lower()]
-st.write("คอลัมน์ที่อาจเกี่ยวกับพิกัด:", coord_cols)
-
-# ลองดูข้อมูลเดียวกับที่ใช้ใน Issues Map
-st.subheader("ลองใช้ข้อมูลพิกัดเดียวกับข้อมูลปัญหา")
-
-# ถ้าข้อมูลฝนมีคอลัมน์ district หรือ province ที่ตรงกับข้อมูลปัญหา
-# เราสามารถสร้างพิกัดในข้อมูลฝนโดยอ้างอิงจากข้อมูลพิกัดในข้อมูลปัญหา
-
-# ตรวจสอบว่า df มี latitude และ longitude หรือไม่
-if 'latitude' in df.columns and 'longitude' in df.columns:
-    # ตรวจสอบว่า df และ rain_df มีคอลัมน์ร่วมกันหรือไม่
-    common_district_col = None
+# ตรวจสอบว่ามีคอลัมน์ coords หรือไม่
+if 'coords' in rain_df.columns:
+    # แยกพิกัดจากคอลัมน์ coords
+    rain_df_with_coords = rain_df.copy()
     
-    # ลองหาคอลัมน์ district หรือ province ที่มีในทั้งสองชุดข้อมูล
-    if 'district' in df.columns and 'district' in rain_df.columns:
-        common_district_col = 'district'
-    elif 'province' in df.columns and 'province' in rain_df.columns:
-        common_district_col = 'province'
-    elif 'PROV_T' in rain_df.columns and 'district' in df.columns:
-        # ลองเทียบ PROV_T กับ district
-        st.write("ลองเทียบ PROV_T กับ district")
-        st.write("ตัวอย่างค่า PROV_T:", rain_df['PROV_T'].unique()[:5])
-        st.write("ตัวอย่างค่า district:", df['district'].unique()[:5])
-    
-    if common_district_col:
-        st.success(f"พบคอลัมน์ร่วม: {common_district_col}")
+    try:
+        # แยกค่า longitude และ latitude จากคอลัมน์ coords
+        # รูปแบบตัวอย่าง: "100.53084,13.81865"
+        rain_df_with_coords[['longitude', 'latitude']] = rain_df_with_coords['coords'].str.split(',', expand=True).astype(float)
         
-        # สร้างพิกัดเฉลี่ยของแต่ละเขต/จังหวัด
-        district_coords = df.groupby(common_district_col)[['latitude', 'longitude']].mean().reset_index()
+        # แสดงข้อมูลพิกัดที่สกัดได้
+        st.write("ข้อมูลฝนที่มีพิกัด:", len(rain_df_with_coords), "แถว")
+        st.dataframe(rain_df_with_coords[['coords', 'longitude', 'latitude', 'AvgRain']].head())
         
-        # แสดงพิกัดเฉลี่ยที่คำนวณได้
-        st.write("พิกัดเฉลี่ยของแต่ละ", common_district_col)
-        st.dataframe(district_coords.head())
-        
-        # รวมพิกัดเข้ากับข้อมูลฝน
-        rain_with_coords = pd.merge(
-            rain_df,
-            district_coords,
-            on=common_district_col,
-            how='inner'
+        # สร้าง heatmap จากข้อมูลพิกัดโดยตรง
+        fig = px.density_mapbox(
+            rain_df_with_coords,
+            lat="latitude", 
+            lon="longitude", 
+            z="AvgRain",
+            radius=15,  # ปรับรัศมีตามความเหมาะสม
+            center=dict(lat=13.75, lon=100.5),  # พิกัดกลางของกรุงเทพฯ
+            zoom=9,
+            mapbox_style="carto-positron",
+            height=600,
+            opacity=0.7,
+            color_continuous_scale="Viridis",
+            title="แผนที่ความเข้มของฝนตกโดยใช้พิกัดจริง"
         )
         
-        # ตรวจสอบผลลัพธ์
-        st.write(f"ข้อมูลฝนที่มีพิกัด: {len(rain_with_coords)} จาก {len(rain_df)} แถว")
+        # ปรับแต่ง layout
+        fig.update_layout(
+            margin={"r":0, "t":30, "l":0, "b":0},
+            coloraxis_colorbar=dict(
+                title="ปริมาณฝนเฉลี่ย"
+            )
+        )
         
-        if not rain_with_coords.empty:
-            st.dataframe(rain_with_coords.head())
-            
-            # สร้างแผนที่
-            # เปลี่ยนจาก scatter_mapbox เป็น density_mapbox
-            # ปรับค่า radius ให้มากขึ้นหรือน้อยลงตามต้องการ
-            fig = px.density_mapbox(
-                rain_with_coords,  # หรือชื่อ DataFrame ที่มีข้อมูลพิกัด
-                lat="latitude", 
-                lon="longitude", 
-                z="AvgRain",
-                radius=20,  # ลองปรับค่านี้ เช่น 10, 15, 20, 30
-                center=dict(lat=13.75, lon=100.5),
-                zoom=10,
-                mapbox_style="carto-positron",
-                height=600,
-                opacity=0.7,  # ปรับความโปร่งใส
-                color_continuous_scale="Blues",  # ลองเปลี่ยนเป็น "Viridis", "Reds", "YlOrRd"
-                title="แผนที่ความเข้มของฝนตก (ปรับแต่งรัศมี)"
-            )
-
-            # ปรับแต่งเพิ่มเติม
-            fig.update_layout(
-                margin={"r":0,"t":30,"l":0,"b":0},
-                coloraxis_colorbar=dict(
-                    title="ปริมาณฝนเฉลี่ย"
-                )
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.warning("ไม่พบคอลัมน์ร่วมระหว่างข้อมูลฝนและข้อมูลปัญหา ลองแสดงตัวอย่างข้อมูลทั้งสองชุด")
-        st.write("คอลัมน์ในข้อมูลปัญหา:", df.columns.tolist())
-        st.write("คอลัมน์ในข้อมูลฝน:", rain_df.columns.tolist())
+        # แสดงแผนที่
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # เพิ่มการวิเคราะห์เพิ่มเติม - แสดงจุดที่มีปริมาณฝนมากที่สุด/น้อยที่สุด
+        st.subheader("พื้นที่ที่มีปริมาณฝนมากที่สุด/น้อยที่สุด")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # แสดงพื้นที่ที่มีฝนมากที่สุด 5 อันดับแรก
+            top_rain = rain_df_with_coords.sort_values('AvgRain', ascending=False).head(5)
+            st.write("พื้นที่ที่มีฝนมากที่สุด 5 อันดับแรก:")
+            st.dataframe(top_rain[['PROV_T', 'district', 'AvgRain']])
+        
+        with col2:
+            # แสดงพื้นที่ที่มีฝนน้อยที่สุด 5 อันดับแรก
+            bottom_rain = rain_df_with_coords.sort_values('AvgRain').head(5)
+            st.write("พื้นที่ที่มีฝนน้อยที่สุด 5 อันดับแรก:")
+            st.dataframe(bottom_rain[['PROV_T', 'district', 'AvgRain']])
+        
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาดในการแยกพิกัด: {e}")
+        st.write("ตัวอย่างค่าในคอลัมน์ coords:")
+        st.write(rain_df['coords'].head())
 else:
-    st.error("ไม่พบคอลัมน์ latitude และ longitude ในข้อมูลปัญหา")
+    st.error("ไม่พบคอลัมน์ 'coords' ในข้อมูลฝน")
 # Footer
 st.markdown("""
 ---
