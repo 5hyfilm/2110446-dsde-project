@@ -287,37 +287,37 @@ with st.expander("Show raw data"):
     st.dataframe(df)
 
 # Create tabs for different analyses
-tab1, tab_map, tab2, tab3, tab4, tab_rain = st.tabs(["Overview", "Map Visualization", "Issue Analysis", "Response Time", "Text Analysis", "Rainfall Analysis"])
+tab1, tab_map, tab2, tab3, tab4, tab_rain, tab_model = st.tabs(["Overview", "Map Visualization", "Issue Analysis", "Response Time", "Text Analysis", "Rainfall Analysis", "Model Prediction"])
 
 with tab1:
     st.header("Overview of Reported Issues")
     
-    col1, col2 = st.columns(2)
+    # col1, col2 = st.columns(2)
     
-    with col1:
+   
         # Count issues by status
-        status_counts = df['state'].value_counts().reset_index()
-        status_counts.columns = ['Status', 'Count']
-        
-        fig = px.pie(status_counts, values='Count', names='Status', 
-                    title='Distribution of Issue Status',
-                    color_discrete_sequence=px.colors.qualitative.Set3)
-        fig.update_traces(textposition='inside', textinfo='percent+label')
-        st.plotly_chart(fig, use_container_width=True)
+    status_counts = df['state'].value_counts().reset_index()
+    status_counts.columns = ['Status', 'Count']
     
-    with col2:
-        # Issues over time
-        df_time = df.copy()
-        df_time['date'] = df_time['timestamp'].dt.date  # แสดงเฉพาะวันที่ ไม่รวมเวลา
-        daily_counts = df_time.groupby('date').size().reset_index(name='count')
+    fig = px.pie(status_counts, values='Count', names='Status', 
+                title='Distribution of Issue Status',
+                color_discrete_sequence=px.colors.qualitative.Set3)
+    fig.update_traces(textposition='inside', textinfo='percent+label')
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # with col2:
+    #     # Issues over time
+    #     df_time = df.copy()
+    #     df_time['date'] = df_time['timestamp'].dt.date  # แสดงเฉพาะวันที่ ไม่รวมเวลา
+    #     daily_counts = df_time.groupby('date').size().reset_index(name='count')
 
-        fig = px.line(daily_counts, x='date', y='count', 
-                    title='Number of Reported Issues by Day',
-                    labels={'count': 'Number of Issues', 'date': 'Date'})
-        fig.update_layout(xaxis_tickangle=-45)
-        # บังคับให้แกน Y เริ่มจาก 0
-        fig.update_yaxes(rangemode="tozero")
-        st.plotly_chart(fig, use_container_width=True)
+    #     fig = px.line(daily_counts, x='date', y='count', 
+    #                 title='Number of Reported Issues by Day',
+    #                 labels={'count': 'Number of Issues', 'date': 'Date'})
+    #     fig.update_layout(xaxis_tickangle=-45)
+    #     # บังคับให้แกน Y เริ่มจาก 0
+    #     fig.update_yaxes(rangemode="tozero")
+    #     st.plotly_chart(fig, use_container_width=True)
     
     # Geographic distribution
     st.subheader("Geographic Distribution of Issues")
@@ -828,24 +828,24 @@ with tab_rain:
                 st.error(f"Error analyzing rainfall correlation: {e}")
                 
         # Rainfall by province/district
-        if 'PROV_T' in rain_df.columns:
-            st.subheader("Average Rainfall by Province")
+        # if 'PROV_T' in rain_df.columns:
+        #     st.subheader("Average Rainfall by Province")
             
-            # Group by province
-            province_rain = rain_df.groupby('PROV_T')['AvgRain'].mean().reset_index()
-            province_rain = province_rain.sort_values('AvgRain', ascending=False)
+        #     # Group by province
+        #     province_rain = rain_df.groupby('PROV_T')['AvgRain'].mean().reset_index()
+        #     province_rain = province_rain.sort_values('AvgRain', ascending=False)
             
-            fig = px.bar(
-                province_rain,
-                x='PROV_T',
-                y='AvgRain',
-                title='Average Rainfall by Province',
-                color='AvgRain',
-                color_continuous_scale='Blues'
-            )
+        #     fig = px.bar(
+        #         province_rain,
+        #         x='PROV_T',
+        #         y='AvgRain',
+        #         title='Average Rainfall by Province',
+        #         color='AvgRain',
+        #         color_continuous_scale='Blues'
+        #     )
             
-            fig.update_layout(xaxis_tickangle=-45)
-            st.plotly_chart(fig, use_container_width=True)
+        #     fig.update_layout(xaxis_tickangle=-45)
+        #     st.plotly_chart(fig, use_container_width=True)
         
         # Analyze peak rainfall months
         if 'MONTH' in rain_df.columns and 'AvgRain' in rain_df.columns:
@@ -998,6 +998,732 @@ with tab_rain:
                 st.write(rain_df['coords'].head())
         else:
             st.error("ไม่พบคอลัมน์ 'coords' ในข้อมูลฝน")
+
+        # วิเคราะห์ความสัมพันธ์ระหว่างปริมาณน้ำฝนกับจำนวนปัญหาตามประเภท
+        st.header("ความสัมพันธ์ระหว่างปริมาณน้ำฝนกับจำนวนปัญหา")
+
+        if not rain_df.empty and not df.empty:
+            # ตรวจสอบว่ามีคอลัมน์ district ในทั้งสองชุดข้อมูลหรือไม่
+            if 'district' in df.columns and 'district' in rain_df.columns:
+                # ปรับให้ชื่อเขตเป็นมาตรฐานเดียวกัน
+                df_copy = df.copy()
+                rain_copy = rain_df.copy()
+                
+                # แปลงชื่อเขตให้เป็นพิมพ์เล็กและตัดช่องว่างเพื่อให้จับคู่ได้ง่ายขึ้น
+                df_copy['district_lower'] = df_copy['district'].str.lower().str.strip()
+                rain_copy['district_lower'] = rain_copy['district'].str.lower().str.strip()
+                
+                # สร้างข้อมูลจำนวนปัญหาแต่ละประเภทในแต่ละเขต
+                issue_counts_by_district = []
+                
+                # นับจำนวนปัญหาแต่ละประเภทในแต่ละเขต
+                for i, row in df_copy.iterrows():
+                    district = row['district_lower']
+                    for issue_type in row['type_list']:
+                        issue_counts_by_district.append({
+                            'district': district,
+                            'issue_type': issue_type
+                        })
+                
+                # แปลงเป็น DataFrame
+                issue_df = pd.DataFrame(issue_counts_by_district)
+                
+                # นับจำนวนปัญหาแต่ละประเภทในแต่ละเขต
+                district_issue_counts = issue_df.groupby(['district', 'issue_type']).size().reset_index(name='count')
+                
+                # เชื่อมข้อมูลปัญหากับข้อมูลฝน
+                merged_data = pd.merge(
+                    district_issue_counts,
+                    rain_copy,
+                    left_on='district',
+                    right_on='district_lower',
+                    how='inner'
+                )
+                
+                # ตรวจสอบว่าเชื่อมข้อมูลได้หรือไม่
+                if merged_data.empty:
+                    st.warning("ไม่สามารถเชื่อมข้อมูลได้ ลองตรวจสอบข้อมูลเขตในทั้งสองชุดข้อมูล")
+                    
+                    # แสดงตัวอย่างข้อมูลเพื่อดีบัก
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write("ชื่อเขตในข้อมูลปัญหา (5 อันดับแรก):")
+                        st.write(df_copy['district_lower'].value_counts().head())
+                    with col2:
+                        st.write("ชื่อเขตในข้อมูลฝน (5 อันดับแรก):")
+                        st.write(rain_copy['district_lower'].value_counts().head())
+                else:
+                    st.success(f"เชื่อมข้อมูลสำเร็จ! มีข้อมูลที่ตรงกัน {len(merged_data)} รายการ")
+                    
+                    # หาคอลัมน์ที่เกี่ยวกับฝน
+                    rain_columns = [col for col in merged_data.columns if any(word in col.lower() for word in ['rain', 'ฝน', 'precipitation'])]
+                    
+                    if not rain_columns:
+                        st.warning("ไม่พบคอลัมน์ที่เกี่ยวกับปริมาณฝน ตรวจสอบชื่อคอลัมน์ในข้อมูล")
+                        st.write("คอลัมน์ทั้งหมดในข้อมูลที่เชื่อมแล้ว:")
+                        st.write(merged_data.columns.tolist())
+                        
+                        # ถ้าไม่พบคอลัมน์ฝน ให้ใช้คอลัมน์ดีฟอลต์
+                        rain_columns = ['AvgRain', 'MinRain', 'MaxRain']
+                    
+                    # เลือกคอลัมน์ฝนที่จะวิเคราะห์
+                    selected_rain_column = st.selectbox(
+                        "เลือกคอลัมน์ปริมาณฝนที่ต้องการวิเคราะห์:",
+                        options=rain_columns,
+                        index=0 if 'AvgRain' in rain_columns else 0
+                    )
+                    
+                    # เลือกประเภทการวิเคราะห์
+                    analysis_type = st.radio(
+                        "เลือกรูปแบบการวิเคราะห์:",
+                        options=["แยกตามประเภทปัญหา", "ภาพรวมทั้งหมด"],
+                        horizontal=True
+                    )
+                    
+                    if analysis_type == "แยกตามประเภทปัญหา":
+                        # หาประเภทปัญหาที่พบบ่อยที่สุด 5 อันดับแรก
+                        top_issues = merged_data['issue_type'].value_counts().head(5).index.tolist()
+                        
+                        # กรองข้อมูลเฉพาะประเภทปัญหาที่พบบ่อย
+                        filtered_data = merged_data[merged_data['issue_type'].isin(top_issues)]
+                        
+                        # สร้างกราฟความสัมพันธ์
+                        st.subheader(f"ความสัมพันธ์ระหว่าง {selected_rain_column} กับจำนวนปัญหาแต่ละประเภท")
+                        
+                        # สร้าง Scatter plot แยกตามประเภทปัญหา
+                        fig = px.scatter(
+                            filtered_data,
+                            x=selected_rain_column,
+                            y='count',
+                            color='issue_type',
+                            hover_name='district_x',  # ใช้ชื่อเขตเป็น hover
+                            hover_data=[selected_rain_column, 'count'],
+                            labels={
+                                selected_rain_column: f'ปริมาณฝน ({selected_rain_column})',
+                                'count': 'จำนวนปัญหา',
+                                'issue_type': 'ประเภทปัญหา'
+                            },
+                            title=f'ความสัมพันธ์ระหว่างปริมาณฝน ({selected_rain_column}) กับจำนวนปัญหาตามประเภท',
+                            trendline='ols'  # เพิ่มเส้นแนวโน้ม
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # วิเคราะห์ค่าสหสัมพันธ์สำหรับแต่ละประเภทปัญหา
+                        st.subheader("การวิเคราะห์ค่าสหสัมพันธ์")
+                        
+                        correlation_data = []
+                        for issue in top_issues:
+                            issue_data = filtered_data[filtered_data['issue_type'] == issue]
+                            if len(issue_data) >= 5:  # ต้องมีข้อมูลอย่างน้อย 5 จุดจึงจะคำนวณ
+                                corr = issue_data[selected_rain_column].corr(issue_data['count'])
+                                correlation_data.append({
+                                    'ประเภทปัญหา': issue,
+                                    'ค่าสหสัมพันธ์': corr,
+                                    'ระดับความสัมพันธ์': abs(corr)
+                                })
+                        
+                        if correlation_data:
+                            corr_df = pd.DataFrame(correlation_data)
+                            corr_df = corr_df.sort_values('ระดับความสัมพันธ์', ascending=False)
+                            
+                            # แสดงผลในรูปแบบตาราง
+                            st.write("ค่าสหสัมพันธ์ระหว่างปริมาณฝนกับจำนวนปัญหาแต่ละประเภท")
+                            
+                            # สร้าง color map สำหรับค่าสหสัมพันธ์
+                            def correlaction_color(val):
+
+                                if val > 0.7:
+                                    return 'background-color: #00802b; color: white'  # สีเขียวเข้ม + ตัวอักษรขาว (สัมพันธ์บวกมาก)
+                                elif val > 0.3:
+                                    return 'background-color: #4CAF50; color: black'  # สีเขียวปานกลาง + ตัวอักษรดำ (สัมพันธ์บวกปานกลาง)
+                                elif val < -0.7:
+                                    return 'background-color: #CC0000; color: white'  # สีแดงเข้ม + ตัวอักษรขาว (สัมพันธ์ลบมาก)
+                                elif val < -0.3:
+                                    return 'background-color: #FF5733; color: black'  # สีแดงส้ม + ตัวอักษรดำ (สัมพันธ์ลบปานกลาง)
+                                else:
+                                    return 'background-color: #E8E8E8; color: black'  # สีเทาอ่อน + ตัวอักษรดำ (สัมพันธ์น้อย)   
+                            
+                            # แสดงตารางพร้อมระบายสี
+                            st.dataframe(corr_df.style.format({
+                                'ค่าสหสัมพันธ์': '{:.3f}'
+                            }).applymap(correlaction_color, subset=['ค่าสหสัมพันธ์']))
+                            
+                            # แสดงการตีความผล
+                            st.subheader("การตีความผล")
+                            
+                            # หาประเภทปัญหาที่มีความสัมพันธ์เชิงบวกมากที่สุด
+                            positive_corr = corr_df[corr_df['ค่าสหสัมพันธ์'] > 0].sort_values('ค่าสหสัมพันธ์', ascending=False)
+                            if not positive_corr.empty:
+                                pos_issue = positive_corr.iloc[0]['ประเภทปัญหา']
+                                pos_corr = positive_corr.iloc[0]['ค่าสหสัมพันธ์']
+                                
+                                if pos_corr > 0.7:
+                                    st.success(f"ปัญหาประเภท '{pos_issue}' มีความสัมพันธ์เชิงบวกในระดับสูงมาก ({pos_corr:.3f}) กับปริมาณฝน นั่นคือเมื่อฝนตกมาก ปัญหาประเภทนี้มีแนวโน้มที่จะเพิ่มขึ้นมาก")
+                                elif pos_corr > 0.3:
+                                    st.info(f"ปัญหาประเภท '{pos_issue}' มีความสัมพันธ์เชิงบวกในระดับปานกลาง ({pos_corr:.3f}) กับปริมาณฝน นั่นคือเมื่อฝนตกมาก ปัญหาประเภทนี้มีแนวโน้มที่จะเพิ่มขึ้นบ้าง")
+                            
+                            # หาประเภทปัญหาที่มีความสัมพันธ์เชิงลบมากที่สุด
+                            negative_corr = corr_df[corr_df['ค่าสหสัมพันธ์'] < 0].sort_values('ค่าสหสัมพันธ์', ascending=True)
+                            if not negative_corr.empty:
+                                neg_issue = negative_corr.iloc[0]['ประเภทปัญหา']
+                                neg_corr = negative_corr.iloc[0]['ค่าสหสัมพันธ์']
+                                
+                                if neg_corr < -0.7:
+                                    st.success(f"ปัญหาประเภท '{neg_issue}' มีความสัมพันธ์เชิงลบในระดับสูงมาก ({neg_corr:.3f}) กับปริมาณฝน นั่นคือเมื่อฝนตกมาก ปัญหาประเภทนี้มีแนวโน้มที่จะลดลงมาก")
+                                elif neg_corr < -0.3:
+                                    st.info(f"ปัญหาประเภท '{neg_issue}' มีความสัมพันธ์เชิงลบในระดับปานกลาง ({neg_corr:.3f}) กับปริมาณฝน นั่นคือเมื่อฝนตกมาก ปัญหาประเภทนี้มีแนวโน้มที่จะลดลงบ้าง")
+                                    
+                            # หากไม่พบความสัมพันธ์ที่ชัดเจน
+                            if (positive_corr.empty or positive_corr.iloc[0]['ค่าสหสัมพันธ์'] <= 0.3) and (negative_corr.empty or negative_corr.iloc[0]['ค่าสหสัมพันธ์'] >= -0.3):
+                                st.warning("ไม่พบความสัมพันธ์ที่ชัดเจนระหว่างปริมาณฝนกับจำนวนปัญหาทุกประเภท อาจมีปัจจัยอื่นที่มีอิทธิพลต่อจำนวนปัญหามากกว่าปริมาณฝน")
+                        else:
+                            st.warning("ไม่มีข้อมูลเพียงพอในการคำนวณค่าสหสัมพันธ์")
+                        
+                        # สร้างกราฟเส้นแสดงแนวโน้มของแต่ละประเภทปัญหา
+                        # st.subheader("แนวโน้มของแต่ละประเภทปัญหาตามปริมาณฝน")
+                        
+                        # # จัดกลุ่มข้อมูลตามช่วงปริมาณฝน
+                        # filtered_data['rain_range'] = pd.cut(
+                        #     filtered_data[selected_rain_column],
+                        #     bins=5,  # แบ่งเป็น 5 ช่วง
+                        #     labels=["น้อยมาก", "น้อย", "ปานกลาง", "มาก", "มากที่สุด"]
+                        # )
+                        
+                        # # หาค่าเฉลี่ยของจำนวนปัญหาแต่ละประเภทในแต่ละช่วงปริมาณฝน
+                        # avg_by_rain = filtered_data.groupby(['rain_range', 'issue_type'])['count'].mean().reset_index()
+                        
+                        # # สร้างกราฟเส้น
+                        # line_fig = px.line(
+                        #     avg_by_rain,
+                        #     x='rain_range',
+                        #     y='count',
+                        #     color='issue_type',
+                        #     markers=True,
+                        #     labels={
+                        #         'rain_range': 'ช่วงปริมาณฝน',
+                        #         'count': 'จำนวนปัญหาเฉลี่ย',
+                        #         'issue_type': 'ประเภทปัญหา'
+                        #     },
+                        #     title=f'จำนวนปัญหาเฉลี่ยตามช่วงปริมาณฝน ({selected_rain_column})'
+                        # )
+                        
+                        # st.plotly_chart(line_fig, use_container_width=True)
+                        
+                    else:  # ภาพรวมทั้งหมด
+                        # รวมข้อมูลปัญหาทุกประเภทเข้าด้วยกันตามเขต
+                        district_total = merged_data.groupby('district_x')[['count', selected_rain_column]].agg({
+                            'count': 'sum',
+                            selected_rain_column: 'mean'
+                        }).reset_index()
+                        
+                        # สร้างกราฟความสัมพันธ์
+                        st.subheader(f"ความสัมพันธ์ระหว่าง {selected_rain_column} กับจำนวนปัญหาทั้งหมด")
+                        
+                        # สร้าง Scatter plot ภาพรวม
+                        fig = px.scatter(
+                            district_total,
+                            x=selected_rain_column,
+                            y='count',
+                            hover_name='district_x',
+                            hover_data=[selected_rain_column, 'count'],
+                            labels={
+                                selected_rain_column: f'ปริมาณฝน ({selected_rain_column})',
+                                'count': 'จำนวนปัญหาทั้งหมด'
+                            },
+                            title=f'ความสัมพันธ์ระหว่างปริมาณฝน ({selected_rain_column}) กับจำนวนปัญหาทั้งหมด',
+                            trendline='ols'  # เพิ่มเส้นแนวโน้ม
+                        )
+                        
+                        # ปรับแต่งกราฟ
+                        fig.update_traces(marker=dict(size=10, opacity=0.7))
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # คำนวณค่าสหสัมพันธ์ภาพรวม
+                        overall_corr = district_total[selected_rain_column].corr(district_total['count'])
+                        
+                        # แสดงค่าสหสัมพันธ์ภาพรวม
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("ค่าสหสัมพันธ์ภาพรวม", f"{overall_corr:.3f}")
+                        
+                        with col2:
+                            if abs(overall_corr) > 0.7:
+                                st.success("มีความสัมพันธ์ระดับสูงมาก")
+                            elif abs(overall_corr) > 0.5:
+                                st.info("มีความสัมพันธ์ระดับสูง")
+                            elif abs(overall_corr) > 0.3:
+                                st.info("มีความสัมพันธ์ระดับปานกลาง")
+                            else:
+                                st.warning("มีความสัมพันธ์ระดับต่ำ")
+                        
+                        # อธิบายผลการวิเคราะห์
+                        st.subheader("การตีความผล")
+                        
+                        if overall_corr > 0.7:
+                            st.success(f"มีความสัมพันธ์เชิงบวกในระดับสูงมาก (r = {overall_corr:.3f}) ระหว่างปริมาณฝนกับจำนวนปัญหาทั้งหมด นั่นคือเมื่อฝนตกมาก จำนวนปัญหาทั้งหมดมีแนวโน้มเพิ่มขึ้นมาก")
+                        elif overall_corr > 0.3:
+                            st.info(f"มีความสัมพันธ์เชิงบวกในระดับปานกลาง (r = {overall_corr:.3f}) ระหว่างปริมาณฝนกับจำนวนปัญหาทั้งหมด นั่นคือเมื่อฝนตกมาก จำนวนปัญหาทั้งหมดมีแนวโน้มเพิ่มขึ้นบ้าง")
+                        elif overall_corr < -0.7:
+                            st.success(f"มีความสัมพันธ์เชิงลบในระดับสูงมาก (r = {overall_corr:.3f}) ระหว่างปริมาณฝนกับจำนวนปัญหาทั้งหมด นั่นคือเมื่อฝนตกมาก จำนวนปัญหาทั้งหมดมีแนวโน้มลดลงมาก")
+                        elif overall_corr < -0.3:
+                            st.info(f"มีความสัมพันธ์เชิงลบในระดับปานกลาง (r = {overall_corr:.3f}) ระหว่างปริมาณฝนกับจำนวนปัญหาทั้งหมด นั่นคือเมื่อฝนตกมาก จำนวนปัญหาทั้งหมดมีแนวโน้มลดลงบ้าง")
+                        else:
+                            st.warning(f"ไม่พบความสัมพันธ์ที่ชัดเจน (r = {overall_corr:.3f}) ระหว่างปริมาณฝนกับจำนวนปัญหาทั้งหมด อาจมีปัจจัยอื่นที่มีอิทธิพลต่อจำนวนปัญหามากกว่าปริมาณฝน")
+                        
+                        # สร้างกราฟเส้นแสดงแนวโน้มตามช่วงปริมาณฝน
+                        st.subheader("แนวโน้มของจำนวนปัญหาตามปริมาณฝน")
+                        
+                        # จัดกลุ่มข้อมูลตามช่วงปริมาณฝน
+                        district_total['rain_range'] = pd.cut(
+                            district_total[selected_rain_column],
+                            bins=5,  # แบ่งเป็น 5 ช่วง
+                            labels=["น้อยมาก", "น้อย", "ปานกลาง", "มาก", "มากที่สุด"]
+                        )
+                        
+                        # หาค่าเฉลี่ยของจำนวนปัญหาในแต่ละช่วงปริมาณฝน
+                        avg_by_rain = district_total.groupby('rain_range')['count'].mean().reset_index()
+                        
+                        # สร้างกราฟเส้น
+                        bar_fig = px.bar(
+                            avg_by_rain,
+                            x='rain_range',
+                            y='count',
+                            color='rain_range',
+                            labels={
+                                'rain_range': 'ช่วงปริมาณฝน',
+                                'count': 'จำนวนปัญหาเฉลี่ย'
+                            },
+                            title=f'จำนวนปัญหาเฉลี่ยตามช่วงปริมาณฝน ({selected_rain_column})'
+                        )
+                        
+                        st.plotly_chart(bar_fig, use_container_width=True)
+                        
+                        # แสดงเขตที่มีปริมาณฝนและจำนวนปัญหามากที่สุด/น้อยที่สุด
+                        st.subheader("เขตที่มีปริมาณฝนและจำนวนปัญหาสูงสุด/ต่ำสุด")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            # เขตที่มีปริมาณฝนมากที่สุด
+                            max_rain_district = district_total.sort_values(selected_rain_column, ascending=False).head(5)
+                            st.write(f"เขตที่มีปริมาณฝน ({selected_rain_column}) มากที่สุด:")
+                            st.dataframe(max_rain_district[['district_x', selected_rain_column, 'count']])
+                        
+                        with col2:
+                            # เขตที่มีจำนวนปัญหามากที่สุด
+                            max_issue_district = district_total.sort_values('count', ascending=False).head(5)
+                            st.write("เขตที่มีจำนวนปัญหามากที่สุด:")
+                            st.dataframe(max_issue_district[['district_x', selected_rain_column, 'count']])
+            else:
+                st.warning("ไม่พบคอลัมน์ district ในชุดข้อมูลใดชุดข้อมูลหนึ่งหรือทั้งสองชุด")
+                
+                # แสดงคอลัมน์ทั้งหมดในทั้งสองชุดข้อมูล
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write("คอลัมน์ในข้อมูลปัญหา:")
+                    st.write(df.columns.tolist())
+                with col2:
+                    st.write("คอลัมน์ในข้อมูลฝน:")
+                    st.write(rain_df.columns.tolist())
+        else:
+            st.error("ไม่มีข้อมูลพร้อมใช้งาน กรุณาตรวจสอบการโหลดข้อมูล")
+
+
+with tab_model:
+    # สร้างแท็บสำหรับการเปรียบเทียบการทำนาย
+    st.header("การเปรียบเทียบระหว่างเวลาจริงกับเวลาที่ทำนาย")
+
+    # ตรวจสอบว่ามีไฟล์ CSV สำหรับข้อมูลการทำนายหรือไม่
+    pred_file = "y_pred_compared.csv"
+
+    if os.path.exists(pred_file):
+        # โหลดข้อมูล
+        try:
+            pred_df = pd.read_csv(pred_file, nrows=1000)
+            st.success(f"โหลดข้อมูลการทำนายสำเร็จ! มีข้อมูลทั้งหมด {len(pred_df)} แถว")
+            
+            # แสดงข้อมูลตัวอย่าง
+            with st.expander("ดูข้อมูลทำนายตัวอย่าง"):
+                st.dataframe(pred_df[['comment', 'time_taken', 'predicted_time']].head(10))
+            
+            # สร้างแท็บย่อยสำหรับการวิเคราะห์ต่างๆ
+            pred_tab1, pred_tab2, pred_tab3, pred_tab4 = st.tabs([
+                "การเปรียบเทียบโดยตรง", "การวิเคราะห์ความแม่นยำ", "การวิเคราะห์ตามเขต", "การวิเคราะห์ตามประเภทปัญหา"
+            ])
+            
+            with pred_tab1:
+                st.subheader("เปรียบเทียบเวลาจริงกับเวลาที่ทำนาย")
+                
+                # สร้างกราฟ Scatter plot
+                fig = px.scatter(
+                    pred_df,
+                    x='time_taken',
+                    y='predicted_time',
+                    hover_data=['comment'],  # แสดงข้อความในการ hover
+                    title='การเปรียบเทียบระหว่างเวลาจริงกับเวลาที่ทำนาย',
+                    labels={
+                        'time_taken': 'เวลาที่ใช้จริง (ชั่วโมง)',
+                        'predicted_time': 'เวลาที่ทำนาย (ชั่วโมง)'
+                    },
+                    opacity=0.7
+                )
+                
+                # เพิ่ม line y=x (เส้นทำนายสมบูรณ์แบบ)
+                max_val = max(pred_df['time_taken'].max(), pred_df['predicted_time'].max())
+                fig.add_trace(
+                    go.Scatter(
+                        x=[0, max_val],
+                        y=[0, max_val],
+                        mode='lines',
+                        name='ทำนายสมบูรณ์แบบ',
+                        line=dict(color='red', dash='dash')
+                    )
+                )
+                
+                # เพิ่ม trend line
+                fig.add_trace(
+                    px.scatter(
+                        pred_df, 
+                        x='time_taken', 
+                        y='predicted_time', 
+                        trendline='ols'
+                    ).data[1]
+                )
+                
+                # ปรับแต่งกราฟ
+                fig.update_layout(
+                    xaxis=dict(range=[0, max_val]),
+                    yaxis=dict(range=[0, max_val])
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                
+                # สร้างฮิสโตแกรมเปรียบเทียบการกระจายตัว
+                hist_fig = go.Figure()
+                hist_fig.add_trace(go.Histogram(
+                    x=pred_df['time_taken'],
+                    name='เวลาที่ใช้จริง',
+                    opacity=0.7,
+                    marker_color='blue'
+                ))
+                hist_fig.add_trace(go.Histogram(
+                    x=pred_df['predicted_time'],
+                    name='เวลาที่ทำนาย',
+                    opacity=0.7,
+                    marker_color='orange'
+                ))
+                
+                hist_fig.update_layout(
+                    title="การกระจายตัวของเวลาจริงและเวลาที่ทำนาย",
+                    xaxis_title="เวลา (ชั่วโมง)",
+                    yaxis_title="จำนวน",
+                    barmode='overlay'
+                )
+                
+                st.plotly_chart(hist_fig, use_container_width=True)
+                
+                # สร้าง Box plot เพื่อเปรียบเทียบ
+                box_data = pd.DataFrame({
+                    'เวลาที่ใช้จริง': pred_df['time_taken'],
+                    'เวลาที่ทำนาย': pred_df['predicted_time']
+                })
+                
+                box_fig = px.box(
+                    box_data,
+                    points='all',
+                    title="เปรียบเทียบการกระจายตัวของเวลาจริงและเวลาที่ทำนาย"
+                )
+                
+                st.plotly_chart(box_fig, use_container_width=True)
+            
+            with pred_tab2:
+                st.subheader("การวิเคราะห์ความแม่นยำของการทำนาย")
+                
+                # คำนวณความคลาดเคลื่อน
+                pred_df['error'] = pred_df['predicted_time'] - pred_df['time_taken']
+                pred_df['abs_error'] = abs(pred_df['error'])
+                pred_df['squared_error'] = pred_df['error'] ** 2
+                
+                # คำนวณ % ความคลาดเคลื่อน (ป้องกัน division by zero)
+                pred_df['pct_error'] = np.where(
+                    pred_df['time_taken'] > 0,
+                    (pred_df['error'] / pred_df['time_taken']) * 100,
+                    0
+                )
+                
+                # คำนวณเมตริกต่างๆ
+                mae = pred_df['abs_error'].mean()
+                mse = pred_df['squared_error'].mean()
+                rmse = np.sqrt(mse)
+                mape = np.abs(pred_df['pct_error']).mean()
+                
+                # แสดงเมตริกความแม่นยำ
+                metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
+                with metrics_col1:
+                    st.metric("Mean Absolute Error (MAE)", f"{mae:.2f} ชั่วโมง")
+                with metrics_col2:
+                    st.metric("Root Mean Squared Error (RMSE)", f"{rmse:.2f} ชั่วโมง")
+                with metrics_col3:
+                    st.metric("Mean Absolute Percentage Error (MAPE)", f"{mape:.2f}%")
+                with metrics_col4:
+                    # คำนวณ R-Squared
+                    correlation = np.corrcoef(pred_df['time_taken'], pred_df['predicted_time'])[0, 1]
+                    r_squared = correlation ** 2
+                    st.metric("R-Squared (R²)", f"{r_squared:.3f}")
+                
+                # แปลความหมายผล
+                if r_squared > 0.7:
+                    st.success("แบบจำลองมีประสิทธิภาพดี (R² > 0.7)")
+                elif r_squared > 0.5:
+                    st.info("แบบจำลองมีประสิทธิภาพปานกลาง (R² > 0.5)")
+                else:
+                    st.warning("แบบจำลองมีประสิทธิภาพต่ำ (R² < 0.5) อาจต้องปรับปรุง")
+                
+                # สร้างกราฟการกระจายของความคลาดเคลื่อน
+                error_fig = px.histogram(
+                    pred_df,
+                    x='error',
+                    nbins=30,
+                    title="การกระจายตัวของความคลาดเคลื่อนในการทำนาย",
+                    labels={'error': 'ความคลาดเคลื่อน (ชั่วโมง)'}
+                )
+                
+                error_fig.add_vline(x=0, line_width=2, line_dash="dash", line_color="red")
+                st.plotly_chart(error_fig, use_container_width=True)
+                
+                # สร้างกราฟความคลาดเคลื่อนเทียบกับค่าจริง
+                error_scatter = px.scatter(
+                    pred_df,
+                    x='time_taken',
+                    y='error',
+                    title="ความคลาดเคลื่อนเทียบกับเวลาที่ใช้จริง",
+                    labels={
+                        'time_taken': 'เวลาที่ใช้จริง (ชั่วโมง)',
+                        'error': 'ความคลาดเคลื่อน (ชั่วโมง)'
+                    }
+                )
+                
+                error_scatter.add_hline(y=0, line_width=2, line_dash="dash", line_color="red")
+                st.plotly_chart(error_scatter, use_container_width=True)
+                
+                # แสดงกรณีที่ทำนายแย่ที่สุด (ความคลาดเคลื่อนมากที่สุด)
+                st.subheader("กรณีที่ทำนายแย่ที่สุด (คลาดเคลื่อนมากที่สุด)")
+                worst_predictions = pred_df.sort_values('abs_error', ascending=False).head(10)
+                st.dataframe(worst_predictions[['comment', 'time_taken', 'predicted_time', 'error', 'abs_error']])
+            
+            with pred_tab3:
+                st.subheader("การวิเคราะห์ความแม่นยำตามเขต")
+                
+                # ดึงรายชื่อคอลัมน์ที่เกี่ยวกับเขต
+                district_cols = [col for col in pred_df.columns if col.startswith('organization_')]
+                
+                if district_cols:
+                    # สร้างคอลัมน์เขตหลัก (เขตที่มีค่ามากที่สุดสำหรับแต่ละแถว)
+                    pred_df['main_district'] = pred_df[district_cols].idxmax(axis=1)
+                    
+                    # แปลงชื่อคอลัมน์ให้เป็นชื่อเขตที่อ่านง่ายขึ้น
+                    pred_df['main_district'] = pred_df['main_district'].str.replace('organization_', '')
+                    
+                    # คำนวณความแม่นยำเฉลี่ยตามเขต
+                    district_accuracy = pred_df.groupby('main_district').agg({
+                        'time_taken': 'mean',
+                        'predicted_time': 'mean',
+                        'abs_error': 'mean',
+                        'pct_error': lambda x: np.abs(x).mean()
+                    }).reset_index()
+                    
+                    district_accuracy = district_accuracy.rename(columns={
+                        'time_taken': 'เวลาจริงเฉลี่ย',
+                        'predicted_time': 'เวลาทำนายเฉลี่ย',
+                        'abs_error': 'ความคลาดเคลื่อนเฉลี่ย',
+                        'pct_error': 'ความคลาดเคลื่อน %'
+                    })
+                    
+                    # เรียงตามความคลาดเคลื่อนเฉลี่ย
+                    district_accuracy = district_accuracy.sort_values('ความคลาดเคลื่อนเฉลี่ย')
+                    
+                    # แสดงตาราง
+                    st.dataframe(district_accuracy)
+                    
+                    # สร้างกราฟความแม่นยำตามเขต
+                    accuracy_fig = px.bar(
+                        district_accuracy,
+                        x='main_district',
+                        y='ความคลาดเคลื่อนเฉลี่ย',
+                        title="ความคลาดเคลื่อนเฉลี่ยตามเขต",
+                        color='ความคลาดเคลื่อนเฉลี่ย',
+                        labels={
+                            'main_district': 'เขต',
+                            'ความคลาดเคลื่อนเฉลี่ย': 'ความคลาดเคลื่อนเฉลี่ย (ชั่วโมง)'
+                        }
+                    )
+                    
+                    accuracy_fig.update_layout(xaxis_tickangle=-45)
+                    st.plotly_chart(accuracy_fig, use_container_width=True)
+                    
+                    # สร้างกราฟเปรียบเทียบเวลาจริงกับทำนายตามเขต
+                    compare_fig = px.bar(
+                        district_accuracy,
+                        x='main_district',
+                        y=['เวลาจริงเฉลี่ย', 'เวลาทำนายเฉลี่ย'],
+                        barmode='group',
+                        title="เปรียบเทียบเวลาจริงและเวลาทำนายเฉลี่ยตามเขต",
+                        labels={'main_district': 'เขต', 'value': 'เวลา (ชั่วโมง)', 'variable': ''}
+                    )
+                    
+                    compare_fig.update_layout(xaxis_tickangle=-45)
+                    st.plotly_chart(compare_fig, use_container_width=True)
+                    
+                    # แสดงเขตที่ทำนายแม่นยำที่สุดและแย่ที่สุด
+                    st.subheader("เขตที่ทำนายแม่นยำที่สุดและแย่ที่สุด")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        best_districts = district_accuracy.head(5)
+                        st.write("เขตที่ทำนายแม่นยำที่สุด:")
+                        st.dataframe(best_districts[['main_district', 'ความคลาดเคลื่อนเฉลี่ย']])
+                    
+                    with col2:
+                        worst_districts = district_accuracy.sort_values('ความคลาดเคลื่อนเฉลี่ย', ascending=False).head(5)
+                        st.write("เขตที่ทำนายแม่นยำน้อยที่สุด:")
+                        st.dataframe(worst_districts[['main_district', 'ความคลาดเคลื่อนเฉลี่ย']])
+                else:
+                    st.warning("ไม่พบข้อมูลเขตในชุดข้อมูล")
+            
+            with pred_tab4:
+                st.subheader("การวิเคราะห์ความแม่นยำตามประเภทปัญหา")
+                
+                # ดึงรายชื่อคอลัมน์ที่เกี่ยวกับประเภทปัญหา (ไม่รวม organization_ และ คอลัมน์อื่นๆ ที่ไม่เกี่ยวข้อง)
+                issue_cols = [col for col in pred_df.columns if col not in [
+                    'Unnamed: 0', 'comment', 'time_taken', 'predicted_time', 'error', 'abs_error', 
+                    'squared_error', 'pct_error', 'main_district'
+                ] and not col.startswith('organization_')]
+                
+                if issue_cols:
+                    # สร้างคอลัมน์ประเภทปัญหาหลัก (ประเภทที่มีค่ามากที่สุดสำหรับแต่ละแถว)
+                    if len(issue_cols) > 0:
+                        pred_df['main_issue'] = pred_df[issue_cols].idxmax(axis=1)
+                        
+                        # คำนวณความแม่นยำเฉลี่ยตามประเภทปัญหา
+                        issue_accuracy = pred_df.groupby('main_issue').agg({
+                            'time_taken': 'mean',
+                            'predicted_time': 'mean',
+                            'abs_error': 'mean',
+                            'pct_error': lambda x: np.abs(x).mean()
+                        }).reset_index()
+                        
+                        issue_accuracy = issue_accuracy.rename(columns={
+                            'time_taken': 'เวลาจริงเฉลี่ย',
+                            'predicted_time': 'เวลาทำนายเฉลี่ย',
+                            'abs_error': 'ความคลาดเคลื่อนเฉลี่ย',
+                            'pct_error': 'ความคลาดเคลื่อน %'
+                        })
+                        
+                        # เรียงตามความคลาดเคลื่อนเฉลี่ย
+                        issue_accuracy = issue_accuracy.sort_values('ความคลาดเคลื่อนเฉลี่ย')
+                        
+                        # แสดงตาราง
+                        st.dataframe(issue_accuracy)
+                        
+                        # สร้างกราฟความแม่นยำตามประเภทปัญหา
+                        issue_fig = px.bar(
+                            issue_accuracy,
+                            x='main_issue',
+                            y='ความคลาดเคลื่อนเฉลี่ย',
+                            title="ความคลาดเคลื่อนเฉลี่ยตามประเภทปัญหา",
+                            color='ความคลาดเคลื่อนเฉลี่ย',
+                            labels={
+                                'main_issue': 'ประเภทปัญหา',
+                                'ความคลาดเคลื่อนเฉลี่ย': 'ความคลาดเคลื่อนเฉลี่ย (ชั่วโมง)'
+                            }
+                        )
+                        
+                        issue_fig.update_layout(xaxis_tickangle=-45)
+                        st.plotly_chart(issue_fig, use_container_width=True)
+                        
+                        # สร้างกราฟเปรียบเทียบเวลาจริงกับทำนายตามประเภทปัญหา
+                        issue_compare_fig = px.bar(
+                            issue_accuracy,
+                            x='main_issue',
+                            y=['เวลาจริงเฉลี่ย', 'เวลาทำนายเฉลี่ย'],
+                            barmode='group',
+                            title="เปรียบเทียบเวลาจริงและเวลาทำนายเฉลี่ยตามประเภทปัญหา",
+                            labels={'main_issue': 'ประเภทปัญหา', 'value': 'เวลา (ชั่วโมง)', 'variable': ''}
+                        )
+                        
+                        issue_compare_fig.update_layout(xaxis_tickangle=-45)
+                        st.plotly_chart(issue_compare_fig, use_container_width=True)
+                        
+                        # สร้างกราฟความสัมพันธ์ระหว่างความซับซ้อนของปัญหากับความแม่นยำ
+                        # (สมมติว่าจำนวนประเภทปัญหาที่เกี่ยวข้องคือความซับซ้อน)
+                        
+                        # สร้างคอลัมน์จำนวนประเภทปัญหาที่เกี่ยวข้อง
+                        pred_df['issue_count'] = pred_df[issue_cols].sum(axis=1)
+                        
+                        # คำนวณความแม่นยำตามจำนวนประเภทปัญหา
+                        complexity_accuracy = pred_df.groupby('issue_count').agg({
+                            'time_taken': 'mean',
+                            'predicted_time': 'mean',
+                            'abs_error': 'mean'
+                        }).reset_index()
+                        
+                        # สร้างกราฟ
+                        complexity_fig = px.line(
+                            complexity_accuracy,
+                            x='issue_count',
+                            y='abs_error',
+                            markers=True,
+                            title="ความคลาดเคลื่อนตามความซับซ้อนของปัญหา",
+                            labels={
+                                'issue_count': 'จำนวนประเภทปัญหาที่เกี่ยวข้อง',
+                                'abs_error': 'ความคลาดเคลื่อนเฉลี่ย (ชั่วโมง)'
+                            }
+                        )
+                        
+                        st.plotly_chart(complexity_fig, use_container_width=True)
+                        
+                        # แสดงประเภทปัญหาที่ทำนายแม่นยำที่สุดและแย่ที่สุด
+                        st.subheader("ประเภทปัญหาที่ทำนายแม่นยำที่สุดและแย่ที่สุด")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            best_issues = issue_accuracy.head(5)
+                            st.write("ประเภทปัญหาที่ทำนายแม่นยำที่สุด:")
+                            st.dataframe(best_issues[['main_issue', 'ความคลาดเคลื่อนเฉลี่ย']])
+                        
+                        with col2:
+                            worst_issues = issue_accuracy.sort_values('ความคลาดเคลื่อนเฉลี่ย', ascending=False).head(5)
+                            st.write("ประเภทปัญหาที่ทำนายแม่นยำน้อยที่สุด:")
+                            st.dataframe(worst_issues[['main_issue', 'ความคลาดเคลื่อนเฉลี่ย']])
+                    else:
+                        st.warning("ไม่พบคอลัมน์ที่เกี่ยวกับประเภทปัญหา")
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการโหลดหรือประมวลผลข้อมูล: {e}")
+    else:
+        st.warning(f"ไม่พบไฟล์ {pred_file} สำหรับการวิเคราะห์ โปรดตรวจสอบว่าไฟล์อยู่ในตำแหน่งที่ถูกต้อง")
+        
+        # เสนอทางเลือกในการอัปโหลดไฟล์
+        uploaded_file = st.file_uploader("อัปโหลดไฟล์ CSV ที่มีข้อมูล time_taken และ predicted_time", type=["csv"])
+        
+        if uploaded_file is not None:
+            try:
+                pred_df = pd.read_csv(uploaded_file)
+                
+                # ตรวจสอบว่ามีคอลัมน์ที่จำเป็นหรือไม่
+                required_cols = ['time_taken', 'predicted_time']
+                
+                if all(col in pred_df.columns for col in required_cols):
+                    st.success("โหลดข้อมูลสำเร็จ!")
+                    
+                    # เรียกใช้โค้ดการวิเคราะห์ที่คล้ายกับด้านบนที่นี่
+                    # ... (สามารถคัดลอกโค้ดจากด้านบนมาใช้ได้)
+                else:
+                    st.error(f"ไฟล์ที่อัปโหลดต้องมีคอลัมน์: {', '.join(required_cols)}")
+            except Exception as e:
+                st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์: {e}")
+
 
 # Footer
 st.markdown("""
