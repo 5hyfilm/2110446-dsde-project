@@ -34,7 +34,6 @@ def etl_postgres_pipeline():
     query = """
         SELECT id, type, org_action as organization, description as comment, timestamp, last_activity FROM issues
         WHERE response_time IS NOT NULL AND predicted_response_time IS NULL
-        LIMIT 10
     """
     df = pd.read_sql(query, engine)
     data_df = df[['type', 'organization', 'comment', 'timestamp', 'last_activity']]
@@ -83,15 +82,29 @@ def etl_postgres_pipeline():
     #         )
     #     conn.commit()
     
-    cursor = engine.cursor()
-    for _, row in df_result.iterrows():
-        cursor.execute("""
-            UPDATE issues
-            SET predicted_response_time = %s
-            WHERE id = %s
-        """, (row['predicted_response_time'], row['id']))
+    # cursor = engine.cursor()
+    # for _, row in df_result.iterrows():
+    #     cursor.execute("""
+    #         UPDATE issues
+    #         SET predicted_response_time = %s
+    #         WHERE id = %s
+    #     """, (row['predicted_response_time'], row['id']))
     
-    engine.commit()
+    # engine.commit()
+
+    with engine.begin() as conn:
+        for _, row in df_result.iterrows():
+            conn.execute(
+                text("""
+                    UPDATE issues
+                    SET predicted_response_time = :predicted_response_time
+                    WHERE id = :id
+                """),
+                {
+                    "predicted_response_time": int(row['predicted_response_time']),
+                    "id": int(row['id'])
+                }
+            )
     
     # OR to update existing table row-by-row:
     # with engine.begin() as conn:
