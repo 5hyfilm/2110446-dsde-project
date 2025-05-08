@@ -117,7 +117,7 @@ with DAG(
     'get_issue_dag',
     default_args=default_args,
     description='Fetch Traffy data and insert/update PostgreSQL with response_time',
-    schedule=None,
+    schedule='@daily',
     catchup=False,
     tags=['dsde'],
 ) as dag:
@@ -132,4 +132,5 @@ with DAG(
         trigger_dag_id="predict_response_time_dag",
     )
 
-    fetch_and_insert_data >> trigger_predict_dag
+    fetch_and_insert_data
+    # fetch_and_insert_data >> trigger_predict_dag

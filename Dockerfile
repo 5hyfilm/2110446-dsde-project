@@ -1,4 +1,3 @@
-FROM apache/airflow:2.8.2
-
-# Install Postgres provider
-RUN pip install apache-airflow-providers-postgres
+FROM apache/airflow:3.0.0
+COPY requirements.txt /
+RUN pip install --no-cache-dir "apache-airflow==${AIRFLOW_VERSION}" -r /requirements.txt

@@ -27,6 +27,8 @@ def initialize_data():
     
     # Example SQL for initializing data
     init_sql = """
+    DROP TABLE IF EXISTS issues;
+
     CREATE EXTENSION IF NOT EXISTS postgis;
     CREATE EXTENSION IF NOT EXISTS postgis_topology;
     
