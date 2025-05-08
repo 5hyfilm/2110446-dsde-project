@@ -128,9 +128,9 @@ with DAG(
     )
 
     trigger_predict_dag = TriggerDagRunOperator(
-        task_id="trigger_predict_response_time_dag",
-        trigger_dag_id="predict_response_time_dag",
+        task_id="trigger_predict_response_time_from_model_dag",
+        trigger_dag_id="predict_response_time_from_model_dag",
     )
 
-    fetch_and_insert_data
-    # fetch_and_insert_data >> trigger_predict_dag
+    # fetch_and_insert_data 
+    fetch_and_insert_data >> trigger_predict_dag
